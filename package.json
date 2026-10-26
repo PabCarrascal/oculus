@@ -1,0 +1,25 @@
+{
+  "name": "oculus",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.4.2",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.0.0",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "dev": "pnpm --filter @oculus/desktop tauri dev",
+    "build": "pnpm --filter @oculus/desktop tauri build",
+    "gen:bindings": "cargo test -p oculus-desktop --lib bindings::tests::export_bindings -- --exact --nocapture",
+    "lint": "biome check . && pnpm -r typecheck",
+    "format": "biome format --write .",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "typescript": "7.0.2"
+  }
+}

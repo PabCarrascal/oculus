@@ -1,0 +1,11 @@
+{
+  "name": "@oculus/bindings",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@tauri-apps/api": "^2.12.0"
+  }
+}

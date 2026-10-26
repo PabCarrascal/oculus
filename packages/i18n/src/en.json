@@ -1,0 +1,49 @@
+{
+  "nav": {
+    "clusters": "Clusters",
+    "settings": "Settings"
+  },
+  "home": {
+    "title": "Clusters",
+    "emptyTitle": "No clusters yet",
+    "emptyBody": "Contexts from your kubeconfig files will show up here."
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "language": "Language",
+    "kubernetes": "Kubernetes",
+    "extraPath": "Extra binary paths",
+    "extraPathHint": "One per line. Oculus looks here for aws, gcloud, kubelogin and other exec plugins in addition to PATH.",
+    "privacy": "Privacy",
+    "crashReports": "Send crash reports",
+    "crashReportsHint": "Off by default. Reports never include credentials or Secret values.",
+    "about": "About",
+    "version": "Version",
+    "platform": "Platform",
+    "startup": "Startup",
+    "saveError": "Settings could not be saved"
+  },
+  "palette": {
+    "placeholder": "Type a command or search…",
+    "empty": "No results",
+    "groupNavigation": "Navigation",
+    "groupPreferences": "Preferences",
+    "goClusters": "Go to clusters",
+    "openSettings": "Open settings",
+    "themeTo": "Theme: {{theme}}",
+    "languageTo": "Language: {{language}}"
+  },
+  "status": {
+    "noClusters": "No clusters connected",
+    "palette": "Command palette"
+  },
+  "languages": {
+    "es": "Español",
+    "en": "English"
+  }
+}

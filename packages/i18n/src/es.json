@@ -1,0 +1,49 @@
+{
+  "nav": {
+    "clusters": "Clústeres",
+    "settings": "Ajustes"
+  },
+  "home": {
+    "title": "Clústeres",
+    "emptyTitle": "Aún no hay clústeres",
+    "emptyBody": "Aquí aparecerán los contextos de tus ficheros kubeconfig."
+  },
+  "settings": {
+    "title": "Ajustes",
+    "appearance": "Apariencia",
+    "theme": "Tema",
+    "themeSystem": "Sistema",
+    "themeLight": "Claro",
+    "themeDark": "Oscuro",
+    "language": "Idioma",
+    "kubernetes": "Kubernetes",
+    "extraPath": "Rutas extra para binarios",
+    "extraPathHint": "Una por línea. Oculus busca aquí aws, gcloud, kubelogin y otros exec plugins además de en el PATH.",
+    "privacy": "Privacidad",
+    "crashReports": "Enviar informes de errores",
+    "crashReportsHint": "Desactivado por defecto. Los informes nunca incluyen credenciales ni valores de Secrets.",
+    "about": "Acerca de",
+    "version": "Versión",
+    "platform": "Plataforma",
+    "startup": "Arranque",
+    "saveError": "No se pudieron guardar los ajustes"
+  },
+  "palette": {
+    "placeholder": "Escribe un comando o busca…",
+    "empty": "Sin resultados",
+    "groupNavigation": "Navegación",
+    "groupPreferences": "Preferencias",
+    "goClusters": "Ir a clústeres",
+    "openSettings": "Abrir ajustes",
+    "themeTo": "Tema: {{theme}}",
+    "languageTo": "Idioma: {{language}}"
+  },
+  "status": {
+    "noClusters": "Sin clústeres conectados",
+    "palette": "Paleta de comandos"
+  },
+  "languages": {
+    "es": "Español",
+    "en": "English"
+  }
+}

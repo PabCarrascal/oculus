@@ -1,0 +1,88 @@
+/*
+ * Design tokens de Oculus. Colores en hex a propósito: WebKitGTK antiguo no
+ * siempre entiende oklch (riesgo 2 de docs/06-riesgos.md).
+ *
+ * Tema: <html data-theme="light|dark"> fuerza uno; sin atributo se sigue al sistema.
+ */
+
+:root {
+  color-scheme: light;
+  --oc-bg: #f7f8fa;
+  --oc-surface: #ffffff;
+  --oc-surface-2: #f0f2f5;
+  --oc-border: #dfe3e8;
+  --oc-text: #161a1f;
+  --oc-text-muted: #5d6673;
+  --oc-accent: #2f6bd8;
+  --oc-accent-text: #ffffff;
+  --oc-ok: #1f8a4c;
+  --oc-warning: #b26a00;
+  --oc-error: #c8323b;
+  --oc-focus: #2f6bd8;
+  --oc-overlay: rgb(15 20 28 / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --oc-bg: #101317;
+    --oc-surface: #171b21;
+    --oc-surface-2: #1e232b;
+    --oc-border: #2b313b;
+    --oc-text: #e7eaee;
+    --oc-text-muted: #98a1ad;
+    --oc-accent: #5b8ff0;
+    --oc-accent-text: #0b0e12;
+    --oc-ok: #3fbf74;
+    --oc-warning: #e0a03a;
+    --oc-error: #f0646b;
+    --oc-focus: #7aa5f5;
+    --oc-overlay: rgb(0 0 0 / 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --oc-bg: #101317;
+  --oc-surface: #171b21;
+  --oc-surface-2: #1e232b;
+  --oc-border: #2b313b;
+  --oc-text: #e7eaee;
+  --oc-text-muted: #98a1ad;
+  --oc-accent: #5b8ff0;
+  --oc-accent-text: #0b0e12;
+  --oc-ok: #3fbf74;
+  --oc-warning: #e0a03a;
+  --oc-error: #f0646b;
+  --oc-focus: #7aa5f5;
+  --oc-overlay: rgb(0 0 0 / 0.55);
+}
+
+@theme inline {
+  --color-bg: var(--oc-bg);
+  --color-surface: var(--oc-surface);
+  --color-surface-2: var(--oc-surface-2);
+  --color-border: var(--oc-border);
+  --color-text: var(--oc-text);
+  --color-muted: var(--oc-text-muted);
+  --color-accent: var(--oc-accent);
+  --color-accent-text: var(--oc-accent-text);
+  --color-ok: var(--oc-ok);
+  --color-warning: var(--oc-warning);
+  --color-error: var(--oc-error);
+  --color-focus: var(--oc-focus);
+  --color-overlay: var(--oc-overlay);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reducir movimiento debe ganar a cualquier transición de componente. */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: ídem. */
+    transition-duration: 0.01ms !important;
+  }
+}
