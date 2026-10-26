@@ -6,7 +6,7 @@
   "home": {
     "title": "Clusters",
     "emptyTitle": "No clusters yet",
-    "emptyBody": "Contexts from your kubeconfig files will show up here."
+    "emptyBody": "No contexts found. Add a kubeconfig file or set KUBECONFIG in your shell."
   },
   "settings": {
     "title": "Settings",
@@ -45,5 +45,67 @@
   "languages": {
     "es": "Español",
     "en": "English"
+  },
+  "clusters": {
+    "addSource": "Add kubeconfig",
+    "removeSource": "Remove file",
+    "origin": {
+      "default": "Default",
+      "env": "KUBECONFIG",
+      "manual": "Added manually"
+    },
+    "sourceError": "Could not read it: {{error}}",
+    "noContexts": "This file has no contexts.",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "retry": "Retry",
+    "open": "Open",
+    "preferences": "Preferences",
+    "state": {
+      "disconnected": "Disconnected",
+      "auth": "Authenticating…",
+      "version": "Contacting the API server…",
+      "discovery": "Discovering resources…",
+      "connected": "Connected · {{version}}",
+      "error": "Connection error"
+    },
+    "readOnly": "Read-only",
+    "protected": "Protected",
+    "prefsTitle": "{{name}} preferences",
+    "alias": "Alias",
+    "aliasHint": "Name shown instead of the context.",
+    "color": "Color",
+    "noColor": "No color",
+    "readOnlyHint": "Hides every action that modifies the cluster.",
+    "protectedHint": "Destructive actions will ask you to type the resource name.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "server": "Server",
+    "defaultNamespace": "Default namespace",
+    "version": "Version",
+    "namespaces": "Namespaces",
+    "resources": "Resource types",
+    "resourcesCount": "{{count}} types",
+    "notConnected": "Connect the cluster to see its resources.",
+    "notFound": "This cluster no longer appears in any kubeconfig.",
+    "category": {
+      "workloads": "Workloads",
+      "config": "Configuration",
+      "network": "Network",
+      "storage": "Storage",
+      "access": "Access control",
+      "cluster": "Cluster",
+      "custom": "Custom resources (CRDs)"
+    }
+  },
+  "statusBar": {
+    "connected_one": "1 cluster connected",
+    "connected_other": "{{count}} clusters connected"
+  },
+  "paletteClusters": {
+    "group": "Clusters",
+    "open": "Open {{name}}",
+    "connect": "Connect to {{name}}",
+    "disconnect": "Disconnect {{name}}"
   }
 }

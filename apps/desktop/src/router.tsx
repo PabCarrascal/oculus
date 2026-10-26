@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AppShell } from "./features/shell/AppShell";
+import { ClusterPage } from "./routes/ClusterPage";
 import { HomePage } from "./routes/HomePage";
 import { SettingsPage } from "./routes/SettingsPage";
 
@@ -12,7 +13,13 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
-export const routeTree = rootRoute.addChildren([homeRoute, settingsRoute]);
+const clusterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/clusters/$clusterId",
+  component: ClusterPage,
+});
+
+export const routeTree = rootRoute.addChildren([homeRoute, settingsRoute, clusterRoute]);
 
 export const router = createRouter({ routeTree });
 

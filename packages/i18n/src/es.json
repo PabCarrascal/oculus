@@ -6,7 +6,7 @@
   "home": {
     "title": "Clústeres",
     "emptyTitle": "Aún no hay clústeres",
-    "emptyBody": "Aquí aparecerán los contextos de tus ficheros kubeconfig."
+    "emptyBody": "No se encontraron contextos. Añade un fichero kubeconfig o define KUBECONFIG en tu shell."
   },
   "settings": {
     "title": "Ajustes",
@@ -45,5 +45,67 @@
   "languages": {
     "es": "Español",
     "en": "English"
+  },
+  "clusters": {
+    "addSource": "Añadir kubeconfig",
+    "removeSource": "Quitar fichero",
+    "origin": {
+      "default": "Por defecto",
+      "env": "KUBECONFIG",
+      "manual": "Añadido a mano"
+    },
+    "sourceError": "No se pudo leer: {{error}}",
+    "noContexts": "Este fichero no tiene contextos.",
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "retry": "Reintentar",
+    "open": "Abrir",
+    "preferences": "Preferencias",
+    "state": {
+      "disconnected": "Desconectado",
+      "auth": "Autenticando…",
+      "version": "Contactando con el API server…",
+      "discovery": "Descubriendo recursos…",
+      "connected": "Conectado · {{version}}",
+      "error": "Error de conexión"
+    },
+    "readOnly": "Solo lectura",
+    "protected": "Protegido",
+    "prefsTitle": "Preferencias de {{name}}",
+    "alias": "Alias",
+    "aliasHint": "Nombre que se muestra en lugar del contexto.",
+    "color": "Color",
+    "noColor": "Sin color",
+    "readOnlyHint": "Oculta todas las acciones que modifican el clúster.",
+    "protectedHint": "Las acciones destructivas pedirán escribir el nombre del recurso.",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "server": "Servidor",
+    "defaultNamespace": "Namespace por defecto",
+    "version": "Versión",
+    "namespaces": "Namespaces",
+    "resources": "Tipos de recurso",
+    "resourcesCount": "{{count}} tipos",
+    "notConnected": "Conecta el clúster para ver sus recursos.",
+    "notFound": "Este clúster ya no aparece en ningún kubeconfig.",
+    "category": {
+      "workloads": "Workloads",
+      "config": "Configuración",
+      "network": "Red",
+      "storage": "Almacenamiento",
+      "access": "Control de acceso",
+      "cluster": "Clúster",
+      "custom": "Recursos personalizados (CRDs)"
+    }
+  },
+  "statusBar": {
+    "connected_one": "1 clúster conectado",
+    "connected_other": "{{count}} clústeres conectados"
+  },
+  "paletteClusters": {
+    "group": "Clústeres",
+    "open": "Abrir {{name}}",
+    "connect": "Conectar a {{name}}",
+    "disconnect": "Desconectar {{name}}"
   }
 }

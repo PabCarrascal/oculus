@@ -9,6 +9,11 @@ import { applyTheme } from "./lib/theme";
 import { router } from "./router";
 import "./styles.css";
 
+// En un navegador sin Tauri (pnpm dev:web) se usa un backend simulado.
+if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+  (await import("./dev/browserMock")).installBrowserMock();
+}
+
 // Ajustes antes de pintar: así el primer frame ya sale con el tema y el idioma
 // correctos, sin destellos ni textos que cambian.
 const settings = await commands.settingsGet();

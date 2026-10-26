@@ -23,7 +23,7 @@ interface ResourceKind {
   namespaced: boolean;
   verbs: string[]; // del discovery
   category: Category; // "workloads" | "config" | "network" | "storage" | "access" | "cluster" | "custom"
-  columns: ColumnDef[]; // definidas en Rust o desde additionalPrinterColumns
+  columns: ColumnDef[]; // etapa 2: definidas en Rust o desde additionalPrinterColumns
 }
 
 interface ColumnDef {
@@ -82,7 +82,7 @@ interface OculusError {
 
 ```ts
 kubeconfig_list_sources(): KubeconfigSource[]
-kubeconfig_add_source(path: string): KubeconfigSource
+kubeconfig_pick_source(): KubeconfigSource | null  // abre el selector nativo desde Rust; null si se cancela
 kubeconfig_remove_source(sourceId: string): void
 
 interface KubeconfigSource { id: string; path: string; origin: "default" | "env" | "manual"; error?: string }
@@ -113,7 +113,7 @@ type ClusterStatus =
   | { state: "disconnected" }
   | { state: "connecting"; step: "auth" | "version" | "discovery" }
   | { state: "connected"; serverVersion: string; degraded: boolean }  // degraded = algún watcher en error
-  | { state: "error"; error: OculusError; retryInMs?: number };
+  | { state: "error"; error: OculusError };  // sin reintento automático: el usuario pulsa Reintentar
 
 discovery_get(clusterId: ClusterId): ResourceKind[]
 namespaces_list(clusterId: ClusterId): string[]   // los que se pueden listar; si listar todos da 403, los de las preferencias
@@ -260,11 +260,16 @@ interface Settings {
 }
 ```
 
+> **Implementado en la etapa 1** (`commands/clusters.rs`): kubeconfig, clústeres, discovery y namespaces, más los eventos `cluster-status-changed` y `kubeconfig-changed`. Respecto al diseño original:
+> - Para añadir un fichero se usa `kubeconfig_pick_source()`, que abre el selector desde Rust, en lugar de `kubeconfig_add_source(path)`. Así el webview no tiene permiso para abrir diálogos ni elegir rutas.
+> - Los eventos se llaman como los genera tauri-specta (`cluster-status-changed`), no `cluster://status`.
+> - `ResourceKind.columns` llega en la etapa 2, y el estado de error no reintenta solo.
+
 ## Eventos globales
 
 | Evento                  | Payload                                | Cuándo                                                                     |
 | ----------------------- | -------------------------------------- | -------------------------------------------------------------------------- |
-| `cluster://status`      | `{ clusterId, status: ClusterStatus }` | Cambia el estado de conexión de un clúster                                 |
-| `kubeconfig://changed`  | `{ sourceId }`                         | Se modifica un fichero kubeconfig vigilado                                 |
+| `cluster-status-changed` | `{ clusterId, status: ClusterStatus }` | Cambia el estado de conexión de un clúster                                 |
+| `kubeconfig-changed`     | `null`                                 | Cambia un kubeconfig vigilado, la lista de fuentes o el `KUBECONFIG` de la shell |
 | `portforward://changed` | `PortForward[]`                        | Se crea, se para o cambia de estado un port-forward                        |
 | `app://error`           | `OculusError`                          | Error no asociado a ninguna vista (por ejemplo, un fallo en segundo plano) |

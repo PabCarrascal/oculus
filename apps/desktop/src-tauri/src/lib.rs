@@ -2,14 +2,20 @@
 
 mod bindings;
 mod commands;
+mod events;
 mod state;
 
+use std::sync::Arc;
 use std::time::Instant;
 
+use oculus_core::cluster::StatusSink;
+use oculus_core::service::ClusterService;
 use oculus_core::settings::SettingsStore;
 use tauri::Manager;
+use tauri_specta::Event;
 use tracing_subscriber::EnvFilter;
 
+use crate::events::{ClusterStatusChanged, KubeconfigChanged};
 use crate::state::AppState;
 
 pub fn run(started: Instant) {
@@ -23,12 +29,32 @@ pub fn run(started: Instant) {
     bindings::export(&builder);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
-            let settings_path = app.path().app_config_dir()?.join("settings.json");
-            tracing::info!(path = %settings_path.display(), "cargando ajustes");
-            app.manage(AppState::new(started, SettingsStore::load(settings_path)));
+            let config_dir = app.path().app_config_dir()?;
+            tracing::info!(dir = %config_dir.display(), "directorio de configuración");
+
+            let handle = app.handle().clone();
+            let sink: StatusSink = Arc::new(move |id, status| {
+                let event = ClusterStatusChanged { cluster_id: id.clone(), status: status.clone() };
+                let _ = event.emit(&handle);
+            });
+            let clusters = Arc::new(ClusterService::new(config_dir.join("workspace.json"), sink));
+            let settings = SettingsStore::load(config_dir.join("settings.json"));
+            app.manage(AppState::new(started, settings, clusters.clone()));
+            app.state::<AppState>().restart_watcher(app.handle());
+
+            // El entorno de la shell de login tarda unos cientos de ms: no se
+            // espera al arrancar. Al tenerlo puede haber fuentes nuevas (KUBECONFIG).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let from_shell = clusters.init_shell_env().await;
+                tracing::info!(from_shell, "entorno de la shell de login listo");
+                handle.state::<AppState>().restart_watcher(&handle);
+                let _ = KubeconfigChanged.emit(&handle);
+            });
             Ok(())
         })
         .run(tauri::generate_context!())

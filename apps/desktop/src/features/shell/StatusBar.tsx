@@ -1,15 +1,19 @@
 import { Kbd } from "@oculus/ui";
 import { useTranslation } from "react-i18next";
 import { modKey } from "../../lib/platform";
+import { useClusters } from "../../stores/clusters";
 import { useUi } from "../../stores/ui";
 
 export function StatusBar() {
   const { t } = useTranslation();
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
+  const connected = (useClusters().data ?? []).filter((c) => c.status.state === "connected").length;
 
   return (
     <footer className="col-span-2 flex h-6 items-center justify-between border-t border-border bg-surface px-3 text-xs text-muted">
-      <span>{t("status.noClusters")}</span>
+      <span>
+        {connected > 0 ? t("statusBar.connected", { count: connected }) : t("status.noClusters")}
+      </span>
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}

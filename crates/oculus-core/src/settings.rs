@@ -1,9 +1,9 @@
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::RwLock;
 
 use oculus_protocol::{Locale, OculusError, Settings, SettingsPatch};
+
+use crate::persist;
 
 const MAX_LINGER_SECONDS: u32 = 600;
 
@@ -18,14 +18,7 @@ impl SettingsStore {
     /// por defecto, y el fichero dañado se aparta para poder inspeccionarlo.
     pub fn load(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
-        let current = match fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|err| {
-                tracing::warn!(%err, path = %path.display(), "ajustes ilegibles; se usan los valores por defecto");
-                let _ = fs::rename(&path, path.with_extension("json.corrupt"));
-                defaults()
-            }),
-            Err(_) => defaults(),
-        };
+        let current = persist::read_json_or(&path, defaults);
         Self { path, current: RwLock::new(current) }
     }
 
@@ -37,7 +30,7 @@ impl SettingsStore {
         let mut current = self.current.write().expect("lock de ajustes envenenado");
         let mut next = current.clone();
         merge(&mut next, patch)?;
-        write_atomic(&self.path, &next)?;
+        persist::write_json_atomic(&self.path, &next)?;
         *current = next.clone();
         Ok(next)
     }
@@ -74,24 +67,10 @@ fn merge(s: &mut Settings, patch: SettingsPatch) -> Result<(), OculusError> {
     Ok(())
 }
 
-/// Escribe en un temporal y lo renombra: un cierre a medias nunca deja el
-/// fichero de ajustes truncado.
-fn write_atomic(path: &Path, settings: &Settings) -> Result<(), OculusError> {
-    let io_err =
-        |err: std::io::Error| OculusError::internal(format!("no se pudieron guardar los ajustes: {err}"));
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(io_err)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_vec_pretty(settings).map_err(|err| OculusError::internal(err.to_string()))?;
-    let mut file = fs::File::create(&tmp).map_err(io_err)?;
-    file.write_all(&json).map_err(io_err)?;
-    file.sync_all().map_err(io_err)?;
-    fs::rename(&tmp, path).map_err(io_err)
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use oculus_protocol::{ErrorCode, Theme};
 
     use super::*;

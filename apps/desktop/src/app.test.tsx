@@ -1,57 +1,8 @@
-import type { Settings } from "@oculus/bindings";
 import { initI18n } from "@oculus/i18n";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { mockIPC } from "@tauri-apps/api/mocks";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createQueryClient } from "./lib/queryClient";
-import { routeTree } from "./router";
-
-const baseSettings: Settings = {
-  theme: "system",
-  locale: "es",
-  shell: null,
-  extraPath: [],
-  telemetry: { crashReports: false },
-  watchLingerSeconds: 30,
-};
-
-/** Simula el backend: guarda los ajustes y registra cada llamada IPC. */
-function mockBackend() {
-  let settings = { ...baseSettings };
-  const calls: { cmd: string; args: unknown }[] = [];
-  mockIPC((cmd, args) => {
-    calls.push({ cmd, args });
-    switch (cmd) {
-      case "settings_get":
-        return settings;
-      case "settings_set":
-        settings = { ...settings, ...(args as { patch: Partial<Settings> }).patch };
-        return settings;
-      case "app_info":
-        return { version: "0.1.0", os: "linux", arch: "x86_64" };
-      case "startup_report":
-        return { processToFirstPaintMs: 420 };
-    }
-  });
-  return { calls };
-}
-
-function renderApp(path = "/") {
-  const client = createQueryClient();
-  client.setQueryData(["settings"], baseSettings);
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: [path] }),
-  });
-  render(
-    <QueryClientProvider client={client}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  return router;
-}
+import { mockBackend, renderApp, teardown } from "./test/backend";
 
 const pressCtrl = (key: string) =>
   act(() => void fireEvent.keyDown(window, { key, ctrlKey: true }));
@@ -60,8 +11,8 @@ beforeAll(async () => {
   await initI18n("es");
 });
 
-afterEach(() => {
-  clearMocks();
+afterEach(async () => {
+  await teardown();
   delete document.documentElement.dataset.theme;
 });
 
@@ -75,7 +26,7 @@ describe("shell de la app", () => {
 
   it("Ctrl+, abre los ajustes", async () => {
     mockBackend();
-    const router = renderApp();
+    const { router } = renderApp();
     await screen.findByText("Aún no hay clústeres");
     await pressCtrl(",");
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
@@ -96,16 +47,20 @@ describe("shell de la app", () => {
   });
 
   it("muestra el error del backend con su pista si un ajuste se rechaza", async () => {
-    mockIPC((cmd) => {
-      if (cmd === "settings_set") {
-        throw {
-          code: "Invalid",
-          message: "valor fuera de rango",
-          details: { status: null, hint: "usa 0–600" },
-        };
-      }
-      return null;
-    });
+    mockIPC(
+      (cmd) => {
+        if (cmd === "clusters_list" || cmd === "kubeconfig_list_sources") return [];
+        if (cmd === "settings_set") {
+          throw {
+            code: "Invalid",
+            message: "valor fuera de rango",
+            details: { status: null, hint: "usa 0–600" },
+          };
+        }
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
     renderApp("/settings");
     fireEvent.click(await screen.findByRole("radio", { name: "Claro" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("valor fuera de rango — usa 0–600");

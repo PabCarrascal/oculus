@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { hasMod } from "../../lib/platform";
+import { useClusterEvents } from "../../stores/clusters";
 import { useUi } from "../../stores/ui";
 import { CommandPalette } from "../command-palette/CommandPalette";
 import { SideRail } from "./SideRail";
@@ -9,6 +10,7 @@ import { useStartupReport } from "./startup";
 
 export function AppShell() {
   useGlobalShortcuts();
+  useClusterEvents();
   // Se dispara desde aquí porque el shell es lo primero que se pinta con contenido.
   useStartupReport();
 

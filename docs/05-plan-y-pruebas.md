@@ -4,7 +4,7 @@ Cada etapa termina con un **hito verificable**: se demuestra en una demo y se mi
 
 **Máquina de referencia** para las medidas: portátil de gama media (4 núcleos, 16 GB, SSD), con un clúster KWOK de 10.000 pods y 500 nodos.
 
-## Etapa 0 · Cimientos
+## Etapa 0 · Cimientos ✅
 
 - Monorepo con Cargo y pnpm, `tauri-specta` generando bindings y la comprobación de bindings en CI.
 - CI con lint y tests en los tres SO; build firmado en macOS y Windows (aunque al principio sea con certificados de prueba).
@@ -13,13 +13,15 @@ Cada etapa termina con un **hito verificable**: se demuestra en una demo y se mi
 
 **Hito:** la app se instala y arranca en los tres SO. Arranque en frío (hasta la primera pintura con contenido) **< 1 s** con la app vacía. Esto deja ~1 s de margen para el objetivo de 2 s.
 
-## Etapa 1 · Clústeres
+## Etapa 1 · Clústeres ✅
 
 - Fuentes de kubeconfig (por defecto, `KUBECONFIG` y manuales), vigiladas con `notify`.
 - Conexión bajo demanda, estado por clúster, discovery y preferencias (alias, color, solo lectura, protegido).
 - Resolución del `PATH` de la shell de login al arrancar y rutas extra configurables.
 
 **Hito:** conecta a kind (certificados), a EKS (exec plugin `aws`), a GKE (`gke-gcloud-auth-plugin`) y a AKS (`kubelogin`). Un clúster inalcanzable da error claro en **< 10 s** sin bloquear a los demás. Discovery en **< 1,5 s** en un clúster con 100 CRDs.
+
+**Resultado (2026-10-26, kind v1.37 con 100 CRDs, Mac arm64):** discovery agregado en 4 ms (171 tipos), conexión completa en 12 ms, servidor inalcanzable con `Unreachable` en 5,0 s. Pendiente: probar EKS, GKE y AKS de verdad. Los exec plugins solo se han probado con binarios simulados en los tests.
 
 ## Etapa 2 · Explorador (solo lectura)
 

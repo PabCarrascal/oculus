@@ -2,11 +2,22 @@ import type { Locale, Theme } from "@oculus/bindings";
 import { Kbd } from "@oculus/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
-import { House, Languages, type LucideIcon, Moon, Settings } from "lucide-react";
+import {
+  Boxes,
+  House,
+  Languages,
+  type LucideIcon,
+  Moon,
+  Plug,
+  Settings,
+  Unplug,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { modKey } from "../../lib/platform";
+import { useClusters, useConnect, useDisconnect } from "../../stores/clusters";
 import { useSettings, useUpdateSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
+import { displayName } from "../clusters/naming";
 
 const THEMES: Theme[] = ["system", "light", "dark"];
 const LOCALES: Locale[] = ["es", "en"];
@@ -19,6 +30,9 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const settings = useSettings();
   const update = useUpdateSettings();
+  const clusters = useClusters().data ?? [];
+  const connect = useConnect();
+  const disconnect = useDisconnect();
 
   const run = (action: () => void) => () => {
     setOpen(false);
@@ -54,6 +68,34 @@ export function CommandPalette() {
             {t("palette.openSettings")}
           </Item>
         </Command.Group>
+
+        {clusters.length > 0 && (
+          <Command.Group heading={t("paletteClusters.group")} className={groupClass}>
+            {clusters.map((c) => {
+              const name = displayName(c);
+              const live = c.status.state === "connected" || c.status.state === "connecting";
+              return [
+                <Item
+                  key={`open-${c.id}`}
+                  icon={Boxes}
+                  onSelect={run(
+                    () =>
+                      void navigate({ to: "/clusters/$clusterId", params: { clusterId: c.id } }),
+                  )}
+                >
+                  {t("paletteClusters.open", { name })}
+                </Item>,
+                <Item
+                  key={`toggle-${c.id}`}
+                  icon={live ? Unplug : Plug}
+                  onSelect={run(() => (live ? disconnect.mutate(c.id) : connect.mutate(c.id)))}
+                >
+                  {t(live ? "paletteClusters.disconnect" : "paletteClusters.connect", { name })}
+                </Item>,
+              ];
+            })}
+          </Command.Group>
+        )}
 
         <Command.Group heading={t("palette.groupPreferences")} className={groupClass}>
           {THEMES.filter((theme) => theme !== settings.theme).map((theme) => (

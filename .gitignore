@@ -6,3 +6,6 @@ dist/
 .DS_Store
 coverage/
 apps/desktop/src-tauri/gen/
+
+# Ajustes locales de Claude Code; launch.json sí se comparte
+.claude/settings.local.json
