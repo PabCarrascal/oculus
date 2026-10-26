@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@oculus/desktop", "dev:web"],
       "port": 1420
+    },
+    {
+      "name": "web-perf",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@oculus/desktop", "preview:perf"],
+      "port": 1421
     }
   ]
 }

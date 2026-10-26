@@ -15,6 +15,7 @@ tauri-build.workspace = true
 [dependencies]
 oculus-core.workspace = true
 oculus-protocol.workspace = true
+oculus-watch.workspace = true
 serde.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true

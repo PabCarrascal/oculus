@@ -1,10 +1,12 @@
 import type { Category, ResourceKind } from "@oculus/bindings";
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
+import { Table2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ClusterActions } from "../features/clusters/ClusterActions";
 import { ClusterStatusLabel } from "../features/clusters/ClusterStatusLabel";
 import { ErrorNotice } from "../features/clusters/ErrorNotice";
 import { displayName } from "../features/clusters/naming";
+import { kindKey } from "../lib/kinds";
 import { useCluster, useDiscovery, useNamespaces } from "../stores/clusters";
 
 const CATEGORIES: Category[] = [
@@ -39,6 +41,16 @@ export function ClusterPage() {
           <h1 className="truncate text-lg font-semibold">{displayName(cluster)}</h1>
           <ClusterStatusLabel status={cluster.status} />
         </div>
+        {connected && (
+          <Link
+            to="/clusters/$clusterId/explore"
+            params={{ clusterId }}
+            className="inline-flex h-8 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-accent-text hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            <Table2 size={16} aria-hidden />
+            {t("explorer.open")}
+          </Link>
+        )}
         <ClusterActions cluster={cluster} />
       </header>
 
@@ -93,6 +105,7 @@ export function ClusterPage() {
               {CATEGORIES.map((category) => (
                 <CategoryCard
                   key={category}
+                  clusterId={clusterId}
                   category={category}
                   kinds={(discovery.data ?? []).filter((k) => k.category === category)}
                 />
@@ -105,7 +118,15 @@ export function ClusterPage() {
   );
 }
 
-function CategoryCard({ category, kinds }: { category: Category; kinds: ResourceKind[] }) {
+function CategoryCard({
+  clusterId,
+  category,
+  kinds,
+}: {
+  clusterId: string;
+  category: Category;
+  kinds: ResourceKind[];
+}) {
   const { t } = useTranslation();
   if (kinds.length === 0) return null;
   return (
@@ -119,7 +140,14 @@ function CategoryCard({ category, kinds }: { category: Category; kinds: Resource
       <ul className="mt-2 space-y-0.5 text-xs text-muted">
         {kinds.map((k) => (
           <li key={`${k.group}/${k.kind}`} className="flex justify-between gap-2">
-            <span className="text-text">{k.kind}</span>
+            <Link
+              to="/clusters/$clusterId/explore"
+              params={{ clusterId }}
+              search={{ kind: kindKey(k) }}
+              className="text-text hover:underline"
+            >
+              {k.kind}
+            </Link>
             <span className="truncate font-mono">
               {k.group ? `${k.group}/${k.version}` : k.version}
             </span>

@@ -73,7 +73,13 @@ oculus/
 
 - Las rutas se definen en código (`router.tsx`), no por ficheros. Se pasará a rutas por ficheros cuando haya suficientes para que compense.
 - Los ajustes se guardan desde `oculus-core` (`settings.json` con escritura atómica), no con `tauri-plugin-store`: así se prueban sin Tauri. El plugin queda para el estado de UI (pestañas, filtros) cuando exista.
-- `oculus-watch`, `oculus-ops` y `oculus-pty` se crean en la etapa que los necesita.
+- `oculus-ops` y `oculus-pty` se crean en la etapa que los necesita.
+
+## Ajustes respecto al diseño (etapa 2)
+
+- `oculus-watch` **no depende de `oculus-core`, sino al revés**: cada `ClusterSession` es dueña de su `WatchManager` y lo cierra al desconectar. `oculus-watch` solo conoce kube-rs y el protocolo; los errores le llegan traducidos por una función de `oculus-core` (para no filtrar secretos).
+- La entrada/salida está detrás del trait `Source`: en producción, kube-rs; en los tests, un canal. Así el gestor se prueba sin API server.
+- Sin TanStack Table (ver D12).
 
 ## Dependencias entre crates
 

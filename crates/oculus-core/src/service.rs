@@ -8,8 +8,10 @@ use std::sync::Arc;
 use kube::config::KubeConfigOptions;
 use kube::{Client, Config};
 use oculus_protocol::{
-    ClusterPrefs, ClusterSummary, ErrorCode, KubeconfigSource, OculusError, ResourceKind, SourceOrigin,
+    ClusterPrefs, ClusterSummary, ErrorCode, KindRef, KubeconfigSource, OculusError, ResourceKind, Scope,
+    SourceOrigin,
 };
+use oculus_watch::{Subscriber, SubscriptionId};
 use tokio::sync::OnceCell;
 
 use crate::cluster::{self, ClusterManager, StatusSink, Timeouts, errors, exec};
@@ -172,6 +174,24 @@ impl ClusterService {
 
     pub async fn namespaces(&self, id: &str) -> Result<Vec<String>, OculusError> {
         self.manager.require_session(id)?.namespaces().await
+    }
+
+    pub fn subscribe(
+        &self,
+        id: &str,
+        kind: &KindRef,
+        scope: Scope,
+        linger: std::time::Duration,
+        subscriber: Subscriber,
+    ) -> Result<SubscriptionId, OculusError> {
+        self.manager.require_session(id)?.subscribe(kind, scope, linger, subscriber)
+    }
+
+    /// Si el clúster ya se desconectó no hay nada que dar de baja.
+    pub fn unsubscribe(&self, id: &str, subscription: &str) {
+        if let Some(session) = self.manager.session(id) {
+            session.watches.unsubscribe(subscription);
+        }
     }
 }
 

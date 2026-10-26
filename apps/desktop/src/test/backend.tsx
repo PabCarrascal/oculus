@@ -1,4 +1,10 @@
-import type { ClusterSummary, KubeconfigSource, ResourceKind, Settings } from "@oculus/bindings";
+import type {
+  ClusterSummary,
+  KubeconfigSource,
+  ResourceEvent,
+  ResourceKind,
+  Settings,
+} from "@oculus/bindings";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -15,12 +21,16 @@ export const baseSettings: Settings = {
   watchLingerSeconds: 30,
 };
 
+type ChannelLike = { onmessage: (event: ResourceEvent) => void };
+
 export interface BackendState {
   settings: Settings;
   sources: KubeconfigSource[];
   clusters: ClusterSummary[];
   kinds: ResourceKind[];
   namespaces: string[];
+  /** Channels de las suscripciones abiertas, por id. */
+  channels: Map<string, ChannelLike>;
 }
 
 /** Simula el backend: guarda estado y registra cada llamada IPC. */
@@ -31,6 +41,7 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
     clusters: [],
     kinds: [],
     namespaces: [],
+    channels: new Map(),
     ...initial,
   };
   const calls: { cmd: string; args: unknown }[] = [];
@@ -38,6 +49,12 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
     (cmd, args) => {
       calls.push({ cmd, args });
       // Copias, como el IPC real: la UI no debe compartir referencias con el backend.
+      // El Channel no se copia: es el objeto vivo por el que el "backend" envía.
+      if (cmd === "resources_subscribe") {
+        const id = `w${state.channels.size + 1}`;
+        state.channels.set(id, (args as { channel: ChannelLike }).channel);
+        return id;
+      }
       return structuredClone(respond(cmd, args));
     },
     { shouldMockEvents: true },
@@ -67,10 +84,21 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
         return state.kinds;
       case "namespaces_list":
         return state.namespaces;
+      case "resources_unsubscribe":
+        state.channels.delete(a.subscriptionId as string);
+        return null;
+      case "resources_reset":
+        return null;
     }
     return null;
   }
-  return { state, calls };
+  /** Envía un evento por el Channel de una suscripción (la última si no se indica). */
+  const push = (event: ResourceEvent, id?: string) => {
+    const channel = id ? state.channels.get(id) : [...state.channels.values()].at(-1);
+    if (!channel) throw new Error("no hay suscripciones abiertas");
+    channel.onmessage(structuredClone(event));
+  };
+  return { state, calls, push };
 }
 
 export function renderApp(path = "/") {

@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AppShell } from "./features/shell/AppShell";
 import { ClusterPage } from "./routes/ClusterPage";
+import { ExplorerPage, type ExplorerSearch } from "./routes/ExplorerPage";
 import { HomePage } from "./routes/HomePage";
 import { SettingsPage } from "./routes/SettingsPage";
 
@@ -19,7 +20,23 @@ const clusterRoute = createRoute({
   component: ClusterPage,
 });
 
-export const routeTree = rootRoute.addChildren([homeRoute, settingsRoute, clusterRoute]);
+const explorerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/clusters/$clusterId/explore",
+  component: ExplorerPage,
+  validateSearch: (search: Record<string, unknown>): ExplorerSearch => ({
+    kind: typeof search.kind === "string" ? search.kind : undefined,
+    ns: typeof search.ns === "string" ? search.ns : undefined,
+    q: typeof search.q === "string" ? search.q : undefined,
+  }),
+});
+
+export const routeTree = rootRoute.addChildren([
+  homeRoute,
+  settingsRoute,
+  clusterRoute,
+  explorerRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

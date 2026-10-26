@@ -119,6 +119,14 @@ discovery_get(clusterId: ClusterId): ResourceKind[]
 namespaces_list(clusterId: ClusterId): string[]   // los que se pueden listar; si listar todos da 403, los de las preferencias
 ```
 
+> **Implementado en la etapa 2** (`commands/resources.rs`), con estos cambios respecto a lo de abajo:
+> - `kind` es un `KindRef { group, version, plural }` y `scope` es `{ kind: "all" } | { kind: "namespaces", names }`.
+> - Las **columnas llegan en el `snapshot`** (`{ type: "snapshot", columns, rows }`), no en `ResourceKind`: para los CRDs hay que leer su definición y eso solo tiene sentido al abrir la vista.
+> - `resources_unsubscribe(clusterId, subscriptionId)`.
+> - **`resources_reset()`**: la UI lo llama al arrancar. Una recarga del webview no avisa al backend y los Channels de la carga anterior ya no tienen receptor (Tauri no da error al enviarles), así que sin esto cada recarga dejaría watchers vivos.
+> - `status` lleva `error: OculusError | null`; no hay `resourceVersion` en el snapshot.
+> - **Limitación conocida:** con varios namespaces, un 403 en uno solo detiene toda la vista, aunque los demás sí se puedan leer, y la pista "elige namespaces" aparece aunque ya se hayan elegido. Se resolverá con el filtrado por RBAC de la etapa 4.
+
 ## Suscripción a recursos (ciclo de vida)
 
 ```ts

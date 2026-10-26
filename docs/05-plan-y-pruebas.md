@@ -23,7 +23,7 @@ Cada etapa termina con un **hito verificable**: se demuestra en una demo y se mi
 
 **Resultado (2026-10-26, kind v1.37 con 100 CRDs, Mac arm64):** discovery agregado en 4 ms (171 tipos), conexión completa en 12 ms, servidor inalcanzable con `Unreachable` en 5,0 s. Pendiente: probar EKS, GKE y AKS de verdad. Los exec plugins solo se han probado con binarios simulados en los tests.
 
-## Etapa 2 · Explorador (solo lectura)
+## Etapa 2 · Explorador (solo lectura) ✅
 
 - WatchManager: reflectors, recuento de referencias, linger, proyección a filas, lotes de deltas y watchers por namespace cuando listar todo da 403.
 - Columnas de los tipos nativos y de los CRDs (`additionalPrinterColumns`).
@@ -35,6 +35,18 @@ Cada etapa termina con un **hito verificable**: se demuestra en una demo y se mi
 - 500 cambios/s durante 60 s sin que la UI se bloquee (ninguna tarea > 50 ms).
 - Memoria del proceso Rust **< 150 MB** por clúster con esa vista abierta. Webview **< 250 MB**.
 - Cerrar la vista libera el watcher en 30 s ± 1 s (se comprueba con métricas internas).
+
+**Resultado (2026-10-26, Mac arm64):**
+
+| Medida | Objetivo | Resultado |
+|---|---|---|
+| Snapshot de 10.000 pods (KWOK, API server real) | < 1,5 s | 435 ms |
+| Memoria del backend con esa vista | < 150 MB | +70 MB de RSS (incluye la copia de filas del propio test) |
+| 500 cambios/s durante 60 s | sin bloqueos | 30.001 parches, 751 lotes de 80 ms, 0 filas desfasadas, RSS estable |
+| Scroll con 10.000 filas y 500 cambios/s (UI, build de producción en Chrome) | 60 fps | 120 fps, ningún frame > 9 ms, 0 tareas largas en 30 s, heap 23–44 MB |
+| Linger al cerrar la vista | 30 s ± 1 | test unitario con tiempo simulado |
+
+Pendiente: la memoria del webview real (WKWebView) y los fps dentro de la app, porque la UI se midió en Chrome con el backend simulado. En modo desarrollo de React los fps bajan visiblemente (p95 de 25 ms), así que las medidas de rendimiento deben hacerse siempre con la build de producción (`preview:perf`).
 
 ## Etapa 3 · Detalle y YAML
 

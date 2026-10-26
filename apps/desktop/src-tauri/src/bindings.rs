@@ -21,6 +21,9 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::clusters::cluster_set_prefs,
             commands::clusters::discovery_get,
             commands::clusters::namespaces_list,
+            commands::resources::resources_subscribe,
+            commands::resources::resources_unsubscribe,
+            commands::resources::resources_reset,
         ])
         .events(collect_events![events::ClusterStatusChanged, events::KubeconfigChanged])
 }

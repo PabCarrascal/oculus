@@ -9,13 +9,19 @@ import { applyTheme } from "./lib/theme";
 import { router } from "./router";
 import "./styles.css";
 
-// En un navegador sin Tauri (pnpm dev:web) se usa un backend simulado.
-if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+// En un navegador sin Tauri (pnpm dev:web, o la build de medida con --mode perf)
+// se usa un backend simulado. En la build normal esta rama desaparece.
+if (
+  (import.meta.env.DEV || import.meta.env.MODE === "perf") &&
+  !("__TAURI_INTERNALS__" in window)
+) {
   (await import("./dev/browserMock")).installBrowserMock();
 }
 
 // Ajustes antes de pintar: así el primer frame ya sale con el tema y el idioma
 // correctos, sin destellos ni textos que cambian.
+// Una recarga del webview no avisa al backend: se cierran las suscripciones de la carga anterior.
+await commands.resourcesReset();
 const settings = await commands.settingsGet();
 queryClient.setQueryData(["settings"], settings);
 applyTheme(settings.theme);

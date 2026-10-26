@@ -147,6 +147,11 @@ Cada decisión indica qué se eligió, por qué, y qué alternativa se descartó
 - Si listar en todo el clúster da 403, se abre un watcher por cada namespace permitido.
 - **Descartada:** sondear con LIST periódicos (más carga para el API server y datos siempre atrasados).
 
+> **Implementado en la etapa 2** (`crates/oculus-watch`), con dos cambios:
+> - **No hay `reflector::Store`.** Se guardan solo las filas proyectadas (`uid → Row`) y cada objeto se descarta tras proyectarlo. 10.000 pods como `serde_json::Value` no caben en el presupuesto de 150 MB por clúster; el objeto completo se pide al abrir el detalle (D4).
+> - **Los relists no envían un snapshot nuevo**, sino un delta con las diferencias, así que la tabla no parpadea.
+> - Además: el listado inicial usa `any_semantic()` (caché del API server), los Secrets se vigilan con `Api<PartialObjectMeta>` (solo nombre, namespace, edad y labels) y un 401/403/404 inicial para el watcher con un error definitivo en lugar de reintentar sin fin.
+
 ### D6 · Validación de YAML
 
 - **Autoritativa:** server-side apply con `dryRun=All`, que valida exactamente igual que el clúster: admission webhooks, CRDs y políticas.
@@ -187,7 +192,8 @@ Cada decisión indica qué se eligió, por qué, y qué alternativa se descartó
 
 ### D12 · Frontend
 
-- React 19 + TypeScript + Vite; TanStack Router, Query, Table y Virtual; Zustand para estado de UI.
+- React 19 + TypeScript + Vite; TanStack Router, Query y Virtual; Zustand para estado de UI.
+- **Sin TanStack Table** (cambio en la etapa 2): su versión 9 cambió la API y aquí solo hace falta ordenar, filtrar, seleccionar y mostrar u ocultar columnas sobre filas ya proyectadas. Está escrito a mano en `features/explorer/rows.ts`, con claves de orden cacheadas por fila para aguantar 500 cambios/s sobre 10.000 filas.
 - Componentes accesibles sobre **Radix UI** con estilos por _design tokens_ en variables CSS (tema claro/oscuro). Tailwind para maquetar.
 - i18n con `i18next` (es/en desde el primer día; nada de cadenas sueltas en el código).
 - Gráficas (fase 2) con **uPlot**: muy ligero y rápido con series largas.

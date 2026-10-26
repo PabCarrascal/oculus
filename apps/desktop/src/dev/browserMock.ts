@@ -3,8 +3,11 @@
 import type {
   ClusterStatus,
   ClusterSummary,
+  ColumnDef,
   KubeconfigSource,
+  ResourceEvent,
   ResourceKind,
+  Row,
   Settings,
 } from "@oculus/bindings";
 import { emit } from "@tauri-apps/api/event";
@@ -110,8 +113,103 @@ function update(id: string, patch: Partial<ClusterSummary>) {
   if (i >= 0) clusters[i] = { ...clusters[i], ...patch } as ClusterSummary;
 }
 
+type ChannelLike = { onmessage: (event: ResourceEvent) => void };
+
+// ?rows=10000&churn=500 en la URL: tamaño de la lista de pods y cambios por segundo.
+const params = new URLSearchParams(location.search);
+const ROWS = Number(params.get("rows") ?? 300);
+const CHURN = Number(params.get("churn") ?? 2);
+const PHASES = [
+  "Running",
+  "Running",
+  "Running",
+  "Pending",
+  "CrashLoopBackOff",
+  "Completed",
+] as const;
+const subscriptions = new Map<string, () => void>();
+
+function syntheticPod(i: number, generation = 0): Row {
+  const phase = PHASES[(i + generation) % PHASES.length] as string;
+  const tone =
+    phase === "Running"
+      ? "ok"
+      : phase === "Pending"
+        ? "progress"
+        : phase === "Completed"
+          ? "neutral"
+          : "error";
+  return {
+    uid: `pod-${i}`,
+    name: `app-${i % 97}-${i.toString(36).padStart(5, "0")}`,
+    namespace: `team-${i % 12}`,
+    createdAt: new Date(Date.now() - ((i * 7919) % 864_000) * 1000).toISOString(),
+    status: { tone, text: phase },
+    cells: {
+      ready: tone === "ok" ? "1/1" : "0/1",
+      restarts: (i * 31 + generation) % 7,
+      node: `node-${i % 40}`,
+      labels: { labels: { app: `app-${i % 97}`, tier: i % 2 ? "web" : "worker" } },
+    },
+  };
+}
+
+const POD_COLUMNS: ColumnDef[] = [
+  ["name", "string", true],
+  ["namespace", "string", true],
+  ["ready", "string", true],
+  ["status", "string", true],
+  ["restarts", "number", true],
+  ["node", "string", true],
+  ["age", "date", true],
+  ["labels", "labels", false],
+].map(([id, type, visible]) => ({
+  id: id as string,
+  label: `columns.${id}`,
+  translate: true,
+  type: type as ColumnDef["type"],
+  defaultVisible: visible as boolean,
+}));
+
+/** Igual que el backend: snapshot, luego deltas agrupados cada 80 ms. */
+function subscribe(channel: ChannelLike): string {
+  const id = `w${subscriptions.size + 1}-${Date.now()}`;
+  const send = (e: ResourceEvent) => channel.onmessage(structuredClone(e));
+  send({ type: "status", state: "initializing", error: null });
+  const rows = Array.from({ length: ROWS }, (_, i) => syntheticPod(i));
+  let generation = 0;
+  let pending = new Map<string, Row>();
+  const start = setTimeout(() => {
+    send({ type: "snapshot", columns: POD_COLUMNS, rows });
+    send({ type: "status", state: "ready", error: null });
+  }, 250);
+  const churn = setInterval(() => {
+    for (let n = 0; n < (CHURN * 80) / 1000; n++) {
+      generation++;
+      const i = (generation * 7919) % ROWS;
+      pending.set(`pod-${i}`, syntheticPod(i, generation));
+    }
+    if (pending.size > 0) {
+      send({ type: "delta", upserts: [...pending.values()], deletes: [] });
+      pending = new Map();
+    }
+  }, 80);
+  subscriptions.set(id, () => {
+    clearTimeout(start);
+    clearInterval(churn);
+  });
+  return id;
+}
+
 export function installBrowserMock() {
-  mockIPC((cmd, args) => structuredClone(handle(cmd, args)), { shouldMockEvents: true });
+  mockIPC(
+    (cmd, args) => {
+      if (cmd === "resources_subscribe")
+        return subscribe((args as { channel: ChannelLike }).channel);
+      return structuredClone(handle(cmd, args));
+    },
+    { shouldMockEvents: true },
+  );
 }
 
 function handle(cmd: string, args: unknown): unknown {
@@ -147,7 +245,17 @@ function handle(cmd: string, args: unknown): unknown {
     case "discovery_get":
       return kinds;
     case "namespaces_list":
-      return ["default", "kube-node-lease", "kube-public", "kube-system", "local-path-storage"];
+      return ["default", ...Array.from({ length: 12 }, (_, i) => `team-${i}`), "kube-system"];
+    case "resources_unsubscribe": {
+      const stop = subscriptions.get(a.subscriptionId as string);
+      stop?.();
+      subscriptions.delete(a.subscriptionId as string);
+      return null;
+    }
+    case "resources_reset":
+      for (const stop of subscriptions.values()) stop();
+      subscriptions.clear();
+      return null;
   }
   return null;
 }

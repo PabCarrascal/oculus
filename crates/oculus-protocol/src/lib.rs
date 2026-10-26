@@ -4,6 +4,7 @@
 mod app;
 mod cluster;
 mod error;
+mod resources;
 mod settings;
 
 pub use app::{AppInfo, StartupReport};
@@ -12,4 +13,7 @@ pub use cluster::{
     ResourceKind, SourceOrigin,
 };
 pub use error::{ErrorCode, ErrorDetails, OculusError};
+pub use resources::{
+    CellValue, ColumnDef, ColumnType, KindRef, ResourceEvent, Row, RowStatus, Scope, Tone, WatchState,
+};
 pub use settings::{Locale, Settings, SettingsPatch, TelemetrySettings, Theme};

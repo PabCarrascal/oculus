@@ -2,7 +2,9 @@
 
 IDE de escritorio para Kubernetes: Tauri 2 + Rust (kube-rs) + React. El diseño completo está en [docs/](docs/README.md).
 
-**Estado:** etapa 1 (clústeres). Lee tus kubeconfig (`~/.kube/config`, `KUBECONFIG` y ficheros añadidos a mano), conecta a varios clústeres a la vez con exec plugins (aws, kubelogin…), muestra el estado y el discovery de cada uno y guarda preferencias por clúster (alias, color, solo lectura, protegido). Todavía no hay explorador de recursos.
+**Estado:** etapa 1 (clústeres). Lee tus kubeconfig (`~/.kube/config`, `KUBECONFIG` y ficheros añadidos a mano), conecta a varios clústeres a la vez con exec plugins (aws, kubelogin…), muestra el estado y el discovery de cada uno y guarda preferencias por clúster (alias, color, solo lectura, protegido).
+
+Etapa 2 (explorador): tablas en vivo de cualquier tipo de recurso, CRDs incluidos, con filtro (`label:app=web`), orden, selección, columnas configurables y filtro de namespaces. Todavía no hay vista de detalle ni acciones.
 
 ## Requisitos
 
@@ -44,6 +46,18 @@ OCULUS_IT_KUBECONFIG=/tmp/oculus-it.kubeconfig cargo test -p oculus-core --test 
 ```
 
 `setup.sh` crea un clúster kind con 100 CRDs y escribe su kubeconfig en un fichero aparte: nunca toca `~/.kube/config` ni `KUBECONFIG`.
+
+### Escala (10.000 pods con KWOK)
+
+```bash
+tests/fixtures/kwok/setup.sh /tmp/oculus-perf.kubeconfig 10000
+```
+
+```bash
+OCULUS_SCALE_KUBECONFIG=/tmp/oculus-perf.kubeconfig cargo test -p oculus-core --release --test scale -- --ignored --nocapture
+```
+
+Para la UI, `pnpm --filter @oculus/desktop preview:perf` sirve la build de producción con el backend simulado en `http://localhost:1421`; añade `?rows=10000&churn=500` a la URL del explorador.
 
 ### Arranque
 

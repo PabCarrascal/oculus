@@ -13,7 +13,10 @@ use std::time::Duration;
 use k8s_openapi::api::core::v1::Namespace;
 use kube::api::{Api, ListParams};
 use kube::{Client, Config};
-use oculus_protocol::{ClusterId, ClusterStatus, ConnectStep, ErrorCode, OculusError, ResourceKind};
+use oculus_protocol::{
+    ClusterId, ClusterStatus, ConnectStep, ErrorCode, KindRef, OculusError, ResourceKind, Scope,
+};
+use oculus_watch::{KindInfo, KubeSource, Subscriber, SubscriptionId, WatchManager, WatchOptions};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Timeouts {
@@ -46,9 +49,35 @@ pub struct ClusterSession {
     pub server_version: String,
     pub kinds: Vec<ResourceKind>,
     pub default_namespace: String,
+    /// Watchers de esta sesión; se cierran al desconectar.
+    pub watches: WatchManager,
 }
 
 impl ClusterSession {
+    /// Se suscribe a un tipo descubierto en esta sesión.
+    pub fn subscribe(
+        &self,
+        kind: &KindRef,
+        scope: Scope,
+        linger: Duration,
+        subscriber: Subscriber,
+    ) -> Result<SubscriptionId, OculusError> {
+        let rk = self
+            .kinds
+            .iter()
+            .find(|k| k.group == kind.group && k.version == kind.version && k.plural == kind.plural)
+            .ok_or_else(|| {
+                OculusError::new(ErrorCode::NotFound, format!("Tipo desconocido: {}", kind.plural))
+            })?;
+        let info = KindInfo {
+            kind: kind.clone(),
+            kind_name: rk.kind.clone(),
+            namespaced: rk.namespaced,
+            verbs: rk.verbs.clone(),
+        };
+        self.watches.subscribe(&info, scope, linger, subscriber)
+    }
+
     /// Namespaces visibles. Si el usuario no puede listarlos, el del contexto.
     pub async fn namespaces(&self) -> Result<Vec<String>, OculusError> {
         let api: Api<Namespace> = Api::all(self.client.clone());
@@ -177,7 +206,9 @@ impl ClusterManager {
             .map_err(|_| errors::timeout("Discovery de recursos", secs))?
             .map_err(|e| errors::from_kube(&e))?;
 
-        Ok(ClusterSession { client, server_version: version.git_version, kinds, default_namespace })
+        let source = Arc::new(KubeSource { client: client.clone() });
+        let watches = WatchManager::new(source, WatchOptions::default(), errors::from_kube);
+        Ok(ClusterSession { client, server_version: version.git_version, kinds, default_namespace, watches })
     }
 
     pub fn disconnect(&self, id: &str) {
@@ -187,7 +218,9 @@ impl ClusterManager {
             if let Some(task) = entry.task.take() {
                 task.abort();
             }
-            entry.session = None;
+            if let Some(session) = entry.session.take() {
+                session.watches.shutdown();
+            }
             entry.generation += 1;
             entry.generation
         };

@@ -8,7 +8,8 @@
     "dev:web": "vite",
     "build:web": "vite build",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "preview:perf": "vite build --mode perf --outDir dist-perf && vite preview --outDir dist-perf --port 1421 --strictPort"
   },
   "dependencies": {
     "@oculus/bindings": "workspace:*",
@@ -16,6 +17,7 @@
     "@oculus/ui": "workspace:*",
     "@tanstack/react-query": "5.104.5",
     "@tanstack/react-router": "1.170.46",
+    "@tanstack/react-virtual": "3.14.22",
     "@tauri-apps/api": "2.12.4",
     "cmdk": "1.1.1",
     "lucide-react": "1.61.0",

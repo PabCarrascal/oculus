@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 oculus-protocol = { path = "crates/oculus-protocol" }
 oculus-core = { path = "crates/oculus-core" }
+oculus-watch = { path = "crates/oculus-watch" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -20,7 +21,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 sys-locale = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process"] }
-kube = { version = "4.2", default-features = false, features = ["client", "config", "rustls-tls", "ring", "oidc", "http-proxy", "gzip"] }
+kube = { version = "4.2", default-features = false, features = ["client", "config", "runtime", "rustls-tls", "ring", "oidc", "http-proxy", "gzip"] }
 # La versión de la API más antigua soportada: no usamos campos que un clúster viejo no tenga.
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 notify = "8"
