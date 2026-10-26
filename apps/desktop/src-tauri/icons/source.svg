@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <title>Oculus</title>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#161a1f"/>
-  <path d="M192 512c80-150 196-232 320-232s240 82 320 232c-80 150-196 232-320 232S272 662 192 512z" fill="none" stroke="#5b8ff0" stroke-width="56" stroke-linejoin="round"/>
-  <circle cx="512" cy="512" r="112" fill="none" stroke="#5b8ff0" stroke-width="56"/>
-  <circle cx="512" cy="512" r="36" fill="#e7eaee"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#151a21"/>
+  <!-- Cúpula vista desde abajo: un solo anillo sugiere los casetones. -->
+  <circle cx="512" cy="512" r="340" fill="#252e3a"/>
+  <circle cx="512" cy="512" r="238" fill="none" stroke="#323d4c" stroke-width="44"/>
+  <!-- El óculo: la abertura al cielo. -->
+  <circle cx="512" cy="512" r="128" fill="#6f9cf3"/>
 </svg>
