@@ -1,9 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <title>Oculus</title>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#151a21"/>
-  <!-- Cúpula vista desde abajo: un solo anillo sugiere los casetones. -->
-  <circle cx="512" cy="512" r="340" fill="#252e3a"/>
-  <circle cx="512" cy="512" r="238" fill="none" stroke="#323d4c" stroke-width="44"/>
-  <!-- El óculo: la abertura al cielo. -->
-  <circle cx="512" cy="512" r="128" fill="#6f9cf3"/>
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0.5" stop-color="#ff8a3d" stop-opacity="0"/>
+      <stop offset="0.66" stop-color="#ff8a3d" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ff8a3d" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Más brillante abajo: la parte del disco que se acerca (efecto Doppler). -->
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8743a"/>
+      <stop offset="1" stop-color="#ffe2a8"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#0a0c10"/>
+  <circle cx="512" cy="512" r="380" fill="url(#halo)"/>
+  <!-- Disco de acreción: la mitad de atrás queda tapada por la sombra. -->
+  <ellipse cx="512" cy="512" rx="370" ry="54" fill="none" stroke="#ffbf73" stroke-opacity="0.85" stroke-width="20"/>
+  <circle cx="512" cy="512" r="212" fill="none" stroke="url(#ring)" stroke-width="44"/>
+  <!-- Horizonte de sucesos. -->
+  <circle cx="512" cy="512" r="190" fill="#000"/>
+  <path d="M142 512A370 54 0 0 0 882 512" fill="none" stroke="#ffd59a" stroke-width="20"/>
 </svg>
