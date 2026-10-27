@@ -10,7 +10,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use kube::config::Kubeconfig;
-use oculus_protocol::{ClusterId, KubeconfigSource, SourceOrigin};
+use oculus_protocol::{ClusterId, KubeconfigSource, OculusError, SourceOrigin};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +175,34 @@ impl Catalog {
     }
 }
 
+/// Como kubectl: un contexto que nombra un clúster o un usuario que no existe es
+/// un error. kube-rs conectaría sin credenciales y el 403 de `system:anonymous`
+/// no dice qué falla. Sin usuario (`user` vacío) sí se permite, a propósito.
+pub fn check_context(config: &Kubeconfig, context: &str) -> Result<(), OculusError> {
+    let hint = "Revisa los nombres en el kubeconfig. Si el contexto viene de KUBECONFIG, \
+                puede estar definido en cualquiera de sus ficheros.";
+    let Some(ctx) = config.contexts.iter().find(|c| c.name == context).and_then(|c| c.context.as_ref())
+    else {
+        return Err(OculusError::invalid(format!("El contexto «{context}» no existe")));
+    };
+    if !config.clusters.iter().any(|c| c.name == ctx.cluster) {
+        return Err(OculusError::invalid(format!(
+            "El contexto «{context}» usa el clúster «{}», que no está definido",
+            ctx.cluster
+        ))
+        .with_hint(hint));
+    }
+    if let Some(user) = ctx.user.as_deref().filter(|u| !u.is_empty())
+        && !config.auth_infos.iter().any(|a| a.name == user)
+    {
+        return Err(OculusError::invalid(format!(
+            "El contexto «{context}» usa el usuario «{user}», que no está definido"
+        ))
+        .with_hint(hint));
+    }
+    Ok(())
+}
+
 fn read(path: &Path) -> Result<Kubeconfig, String> {
     if !path.exists() {
         return Err("El fichero no existe".to_owned());
@@ -284,6 +312,34 @@ contexts:
         assert_eq!(catalog.sources[1].error.as_deref(), Some("El fichero no existe"));
         assert!(catalog.sources[2].error.is_none());
         assert_eq!(catalog.contexts.len(), 1);
+    }
+
+    #[test]
+    fn un_contexto_con_usuario_o_cluster_inexistente_es_un_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = write(dir.path(), "a.yaml", CLUSTER_A);
+        let b = write(dir.path(), "b.yaml", CLUSTER_B_NO_USER);
+        let catalog = Catalog::load(&[
+            SourceSpec { path: a.clone(), origin: SourceOrigin::Manual },
+            SourceSpec { path: b.clone(), origin: SourceOrigin::Manual },
+        ]);
+
+        let (config, context) = catalog.kubeconfig_for(&cluster_id(&a, "ctx-a")).unwrap();
+        assert!(check_context(&config, &context).is_ok());
+
+        // Fuente manual: no se fusiona con nada, así que alice no existe para b.
+        let (config, context) = catalog.kubeconfig_for(&cluster_id(&b, "ctx-b")).unwrap();
+        let err = check_context(&config, &context).unwrap_err();
+        assert_eq!(err.code, oculus_protocol::ErrorCode::Invalid);
+        assert!(err.message.contains("usuario «alice»"), "{}", err.message);
+
+        let mut sin_cluster = config.clone();
+        sin_cluster.clusters.clear();
+        assert!(check_context(&sin_cluster, &context).unwrap_err().message.contains("clúster «b»"));
+
+        let mut sin_usuario = config;
+        sin_usuario.contexts[0].context.as_mut().unwrap().user = None;
+        assert!(check_context(&sin_usuario, &context).is_ok());
     }
 
     #[test]

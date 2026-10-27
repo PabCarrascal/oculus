@@ -15,7 +15,7 @@ use oculus_watch::{Subscriber, SubscriptionId};
 use tokio::sync::OnceCell;
 
 use crate::cluster::{self, ClusterManager, StatusSink, Timeouts, TunnelRequest, errors, exec};
-use crate::kubeconfig::{Catalog, SourceSpec, discover_sources};
+use crate::kubeconfig::{self, Catalog, SourceSpec, discover_sources};
 use crate::shell_env::{ShellEnv, effective_path};
 use crate::tunnel::{self, SshLauncher, TunnelManager, TunnelTimeouts};
 use crate::workspace::WorkspaceStore;
@@ -191,6 +191,11 @@ impl ClusterService {
         })?;
         let default_namespace = entry.default_namespace.clone().unwrap_or_else(|| "default".to_owned());
         let (kubeconfig, context) = catalog.kubeconfig_for(id).expect("el contexto existe en el catálogo");
+        // Antes que el túnel: con el kubeconfig mal no merece la pena abrirlo.
+        if let Err(error) = kubeconfig::check_context(&kubeconfig, &context) {
+            self.manager.connect_with(id.to_owned(), default_namespace, None, |_| async { Err(error) });
+            return Ok(());
+        }
         let tunnel = self.workspace.prefs(id).ssh_tunnel.map(|t| TunnelRequest {
             host: t.host,
             launcher: Box::pin(self.ssh_launcher(extra_path.clone())),
