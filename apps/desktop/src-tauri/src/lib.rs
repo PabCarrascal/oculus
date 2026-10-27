@@ -57,6 +57,13 @@ pub fn run(started: Instant) {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("no se pudo arrancar Oculus");
+        .build(tauri::generate_context!())
+        .expect("no se pudo arrancar Oculus")
+        .run(|app, event| {
+            // Cierra las sesiones y, con ellas, los túneles SSH (si no, quedarían
+            // procesos `ssh` vivos tras salir).
+            if let tauri::RunEvent::Exit = event {
+                app.state::<AppState>().clusters.shutdown();
+            }
+        });
 }

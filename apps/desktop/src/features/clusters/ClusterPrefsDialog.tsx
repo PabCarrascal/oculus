@@ -1,9 +1,17 @@
-import type { ClusterPrefs, ClusterSummary } from "@oculus/bindings";
+import {
+  type ClusterPrefs,
+  type ClusterSummary,
+  commands,
+  type OculusError,
+  type SshHostInfo,
+} from "@oculus/bindings";
 import { Button, cn, Dialog, Field, Input, Switch } from "@oculus/ui";
+import { useMutation } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { unwrap } from "../../lib/ipc";
 import { useSetPrefs } from "../../stores/clusters";
 import { ErrorNotice } from "./ErrorNotice";
 import { displayName, PRESET_COLORS } from "./naming";
@@ -84,6 +92,11 @@ export function ClusterPrefsDialog({ cluster, open, onOpenChange }: Props) {
             onCheckedChange={(readOnly) => patch({ readOnly })}
           />
         </Field>
+        <SshTunnelField
+          host={prefs.sshTunnel?.host ?? ""}
+          hasProxyUrl={cluster.hasProxyUrl}
+          onChange={(host) => patch({ sshTunnel: host ? { host } : null })}
+        />
         <Field
           label={t("clusters.protected")}
           hint={t("clusters.protectedHint")}
@@ -97,6 +110,73 @@ export function ClusterPrefsDialog({ cluster, open, onOpenChange }: Props) {
         </Field>
       </div>
     </Dialog>
+  );
+}
+
+/** Host del bastión, con «Probar» para ver adónde irá ssh sin conectar. */
+function SshTunnelField({
+  host,
+  hasProxyUrl,
+  onChange,
+}: {
+  host: string;
+  hasProxyUrl: boolean;
+  onChange: (host: string) => void;
+}) {
+  const { t } = useTranslation();
+  const check = useMutation<SshHostInfo, OculusError, string>({
+    mutationFn: (h) => unwrap(commands.sshTunnelCheck(h)),
+  });
+  const trimmed = host.trim();
+  return (
+    <div>
+      <Field
+        label={t("clusters.sshTunnel")}
+        hint={t("clusters.sshTunnelHint")}
+        htmlFor="ssh-tunnel"
+      >
+        <div className="flex gap-2">
+          <Input
+            id="ssh-tunnel"
+            className="w-40 font-mono text-xs"
+            value={host}
+            placeholder={t("clusters.sshTunnelNone")}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            onChange={(e) => {
+              check.reset();
+              onChange(e.target.value);
+            }}
+          />
+          <Button
+            variant="ghost"
+            disabled={!trimmed || check.isPending}
+            onClick={() => check.mutate(trimmed)}
+          >
+            {check.isPending ? t("clusters.sshTunnelChecking") : t("clusters.sshTunnelCheck")}
+          </Button>
+        </div>
+      </Field>
+      {check.data && (
+        <p className="-mt-1 pb-3 text-xs text-muted" role="status">
+          {t("clusters.sshTunnelResolved", {
+            user: check.data.user,
+            hostname: check.data.hostname,
+            port: check.data.port,
+          })}
+          {check.data.proxyJump && ` ${t("clusters.sshTunnelVia", { jump: check.data.proxyJump })}`}
+        </p>
+      )}
+      {check.isError && (
+        <div className="pb-3">
+          <ErrorNotice error={check.error} />
+        </div>
+      )}
+      {trimmed && hasProxyUrl && (
+        <p className="-mt-1 pb-3 text-xs text-warning">{t("clusters.sshTunnelProxyUrl")}</p>
+      )}
+    </div>
   );
 }
 

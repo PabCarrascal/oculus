@@ -24,6 +24,8 @@ export const commands = {
 	clusterConnect: (clusterId: string) => typedError<null, OculusError_Serialize>(__TAURI_INVOKE("cluster_connect", { clusterId })),
 	clusterDisconnect: (clusterId: string) => typedError<null, OculusError_Serialize>(__TAURI_INVOKE("cluster_disconnect", { clusterId })),
 	clusterSetPrefs: (clusterId: string, prefs: ClusterPrefs_Deserialize) => typedError<ClusterPrefs_Serialize, OculusError_Serialize>(__TAURI_INVOKE("cluster_set_prefs", { clusterId, prefs })),
+	/**  Lo que `ssh` entiende de un host, sin conectar (`ssh -G`). */
+	sshTunnelCheck: (host: string) => typedError<SshHostInfo_Serialize, OculusError_Serialize>(__TAURI_INVOKE("ssh_tunnel_check", { host })),
 	discoveryGet: (clusterId: string) => typedError<ResourceKind[], OculusError_Serialize>(__TAURI_INVOKE("discovery_get", { clusterId })),
 	namespacesList: (clusterId: string) => typedError<string[], OculusError_Serialize>(__TAURI_INVOKE("namespaces_list", { clusterId })),
 	/**  Abre (o comparte) una vigilancia y devuelve su id. Los eventos llegan por `channel`. */
@@ -74,6 +76,8 @@ export type ClusterPrefs_Deserialize = {
 	readOnly?: boolean,
 	/**  Las acciones destructivas exigen escribir el nombre del recurso. */
 	protected?: boolean,
+	/**  Conectar a través de un bastión con `ssh -D` (D13). */
+	sshTunnel?: SshTunnelPrefs | null,
 };
 
 export type ClusterPrefs_Serialize = {
@@ -84,6 +88,8 @@ export type ClusterPrefs_Serialize = {
 	readOnly: boolean,
 	/**  Las acciones destructivas exigen escribir el nombre del recurso. */
 	protected: boolean,
+	/**  Conectar a través de un bastión con `ssh -D` (D13). */
+	sshTunnel: SshTunnelPrefs | null,
 };
 
 export type ClusterStatus = ClusterStatus_Serialize | ClusterStatus_Deserialize;
@@ -100,9 +106,9 @@ export type ClusterStatusChanged_Serialize = {
 	status: ClusterStatus_Serialize,
 };
 
-export type ClusterStatus_Deserialize = { state: "disconnected" } | { state: "connecting"; step: ConnectStep } | { state: "connected"; serverVersion: string; degraded: boolean } | { state: "error"; error: OculusError_Deserialize };
+export type ClusterStatus_Deserialize = { state: "disconnected" } | { state: "connecting"; step: ConnectStep } | { state: "connected"; serverVersion: string; degraded: boolean; tunnel?: TunnelStatus | null } | { state: "error"; error: OculusError_Deserialize };
 
-export type ClusterStatus_Serialize = { state: "disconnected" } | { state: "connecting"; step: ConnectStep } | { state: "connected"; serverVersion: string; degraded: boolean } | { state: "error"; error: OculusError_Serialize };
+export type ClusterStatus_Serialize = { state: "disconnected" } | { state: "connecting"; step: ConnectStep } | { state: "connected"; serverVersion: string; degraded: boolean; tunnel: TunnelStatus | null } | { state: "error"; error: OculusError_Serialize };
 
 export type ClusterSummary = ClusterSummary_Serialize | ClusterSummary_Deserialize;
 
@@ -113,6 +119,8 @@ export type ClusterSummary_Deserialize = {
 	/**  URL del API server; solo se muestra. */
 	server?: string | null,
 	defaultNamespace?: string | null,
+	/**  El kubeconfig ya define un `proxy-url` para este clúster (no se envía la URL). */
+	hasProxyUrl: boolean,
 	prefs: ClusterPrefs_Deserialize,
 	status: ClusterStatus_Deserialize,
 };
@@ -124,6 +132,8 @@ export type ClusterSummary_Serialize = {
 	/**  URL del API server; solo se muestra. */
 	server: string | null,
 	defaultNamespace: string | null,
+	/**  El kubeconfig ya define un `proxy-url` para este clúster (no se envía la URL). */
+	hasProxyUrl: boolean,
 	prefs: ClusterPrefs_Serialize,
 	status: ClusterStatus_Serialize,
 };
@@ -139,7 +149,9 @@ export type ColumnDef = {
 
 export type ColumnType = "string" | "number" | "date" | "labels";
 
-export type ConnectStep = "auth" | "version" | "discovery";
+export type ConnectStep = 
+/**  Levantando el túnel SSH; solo si el clúster lo usa. */
+"tunnel" | "auth" | "version" | "discovery";
 
 export type ErrorCode = "Unauthorized" | "Forbidden" | "NotFound" | "Conflict" | "Invalid" | "Unreachable" | "Cancelled" | "Internal";
 
@@ -462,6 +474,30 @@ export type SourceOrigin =
 /**  Añadido a mano desde la app. */
 "manual";
 
+/**  Lo que `ssh -G` entiende de un host, sin conectar. */
+export type SshHostInfo = SshHostInfo_Serialize | SshHostInfo_Deserialize;
+
+/**  Lo que `ssh -G` entiende de un host, sin conectar. */
+export type SshHostInfo_Deserialize = {
+	hostname: string,
+	user: string,
+	port: number,
+	proxyJump?: string | null,
+};
+
+/**  Lo que `ssh -G` entiende de un host, sin conectar. */
+export type SshHostInfo_Serialize = {
+	hostname: string,
+	user: string,
+	port: number,
+	proxyJump: string | null,
+};
+
+export type SshTunnelPrefs = {
+	/**  Alias de `~/.ssh/config` o `usuario@host[:puerto]`. */
+	host: string,
+};
+
 /**
  *  Medida de arranque en frío: desde que arranca el proceso hasta que la UI
  *  avisa de su primera pintura con contenido (hito de la etapa 0).
@@ -485,6 +521,15 @@ export type TelemetrySettings_Serialize = {
 export type Theme = "system" | "light" | "dark";
 
 export type Tone = "ok" | "warning" | "error" | "progress" | "neutral";
+
+export type TunnelState = "up" | 
+/**  `ssh` terminó y se está relanzando en el mismo puerto. */
+"reconnecting";
+
+export type TunnelStatus = {
+	host: string,
+	state: TunnelState,
+};
 
 export type UpdateResult = {
 	resourceVersion: string,

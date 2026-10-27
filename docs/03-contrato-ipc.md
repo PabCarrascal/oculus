@@ -127,6 +127,61 @@ namespaces_list(clusterId: ClusterId): string[]   // los que se pueden listar; s
 > - `status` lleva `error: OculusError | null`; no hay `resourceVersion` en el snapshot.
 > - **Limitación conocida:** con varios namespaces, un 403 en uno solo detiene toda la vista, aunque los demás sí se puedan leer, y la pista "elige namespaces" aparece aunque ya se hayan elegido. Se resolverá con el filtrado por RBAC de la etapa 4.
 
+### Túnel SSH por clúster (D13)
+
+> **Implementado** (`crates/oculus-core/src/tunnel`), con estos añadidos al diseño:
+> - `ClusterSummary.hasProxyUrl`: el kubeconfig ya define `proxy-url` para ese clúster. Solo el booleano; la URL no se envía, porque puede llevar credenciales.
+> - `ssh` recibe el `PATH` efectivo y el `SSH_AUTH_SOCK` de la shell de login: el agente que ve el usuario en su terminal (1Password, Secretive…) no tiene por qué ser el que hereda la app de launchd.
+> - "Listo" es un saludo SOCKS5 completo, no solo que el puerto acepte conexiones, para no dar por bueno otro proceso que ocupe el puerto.
+> - Los pids van en `tunnels.json`, junto a `workspace.json`. La limpieza de huérfanos al arrancar solo existe en macOS y Linux (usa `ps`). En Windows queda pendiente un Job Object; mientras tanto, un `ssh` huérfano cae solo por `ServerAlive` cuando el bastión deja de responder.
+
+Cambios en el contrato:
+
+```ts
+interface ClusterPrefs {
+  // …lo de arriba
+  sshTunnel?: { host: string };  // alias de ~/.ssh/config o usuario@host[:puerto]
+}
+
+type ConnectStep = "tunnel" | "auth" | "version" | "discovery";  // "tunnel" solo si hay túnel
+
+// En el estado "connected", junto a serverVersion y degraded:
+tunnel: null | { host: string; state: "up" | "reconnecting" };
+
+// Para el diálogo de preferencias: lo que ssh entiende de ese host, sin conectar (`ssh -G`).
+ssh_tunnel_check(host: string): { hostname: string; user: string; port: number; proxyJump?: string }
+```
+
+Cómo funciona:
+
+- **Validación del host.** No vacío, sin espacios ni caracteres de control, sin `-` inicial y como mucho 255 caracteres. Además va siempre detrás de `--`: comprobado que así `-oProxyCommand=…` se rechaza como nombre de host en vez de tomarse como opción. `ssh` no entiende `host:puerto` (lo toma por un nombre de host), así que `usuario@host:puerto` se le pasa como `ssh://usuario@host:puerto`. Los alias y los hosts sin puerto van tal cual.
+- **Binario.** `ssh` se busca en el `PATH` de la shell de login más `extraPath`, como los exec plugins (riesgo 1). En Windows, también en `System32\OpenSSH`, y se lanza sin ventana de consola.
+- **Puerto.** `-D` no admite el puerto 0 (comprobado), así que Oculus pide un puerto libre al sistema, lo suelta y se lo pasa a `ssh`. Si otro proceso lo ocupa entre medias, `ExitOnForwardFailure` hace que `ssh` termine y se reintenta con otro puerto (tres veces como mucho).
+- **Línea de órdenes:** `ssh -N -D 127.0.0.1:PUERTO -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ControlMaster=no -o ControlPath=none -- HOST`.
+  - `ControlMaster=no` y `ControlPath=none`: si el usuario usa multiplexación, el `-D` acabaría en un proceso maestro ajeno que Oculus no puede vigilar ni parar.
+  - La entrada y la salida estándar van a `null`. De la salida de error se guardan las últimas 20 líneas en memoria, para clasificar el fallo.
+- **Listo.** `ssh` solo abre el `-D` después de autenticarse. El túnel está listo cuando `127.0.0.1:PUERTO` acepta conexiones (se comprueba cada 100 ms). Falla si `ssh` termina antes o si pasan 15 s.
+- **Cliente.** `proxy_url = socks5://127.0.0.1:PUERTO`. kube-rs solo acepta el esquema `socks5`, no `socks5h`, pero ya resuelve los nombres en el bastión. Si el kubeconfig trae su propio `proxy-url`, **gana el túnel**: se registra un aviso y el diálogo de preferencias lo indica. El `connect_timeout` de 5 s cubre el saludo SOCKS y TLS, porque kube-rs lo aplica sobre el conector completo.
+- **Un túnel por host, compartido.** Si varios clústeres usan el mismo bastión, comparten un único `ssh` con un contador de referencias, para no autenticar (ni pedir que se toque una llave física) una vez por clúster. Cada sesión guarda su parte del túnel. El `ssh` se cierra cuando lo suelta el último clúster que lo usa: al desconectar, o si la conexión falla después de levantar el túnel.
+- **Si el túnel se cae** (`ssh` termina con la sesión abierta), la sesión sigue en `connected` con `tunnel.state = "reconnecting"` y `degraded = true`. `ssh` se relanza **en el mismo puerto** con espera creciente (1, 2, 4… hasta 30 s). Como el puerto no cambia, el `Client` sigue valiendo y los watchers se recuperan solos con su propio reintento. Se abandona, y el clúster pasa a `error`, si el relanzamiento falla al autenticar o si el puerto ya no está libre; al reconectar se elige otro.
+- **Al salir de la app**, los procesos `ssh` se matan uno a uno por su pid, de forma síncrona. No basta con soltar los túneles: eso solo programa su cierre en el runtime, y el proceso puede terminar antes de que se ejecute. Por si la app se cuelga, los pid se anotan en el directorio de datos. Al arrancar se matan los que sigan vivos, pero solo tras comprobar que su línea de órdenes es un `ssh -D 127.0.0.1:…` (un pid se puede reutilizar).
+- **Errores** a partir de la salida de error de `ssh`:
+
+  | Salida de `ssh` | `code` | Pista |
+  | --- | --- | --- |
+  | `Permission denied` | `Unauthorized` | Carga la clave en el agente (`ssh-add`). Los bastiones con segundo factor interactivo aún no están soportados. |
+  | `Host key verification failed`, `REMOTE HOST IDENTIFICATION HAS CHANGED` | `Unauthorized` | Conéctate una vez desde la terminal (`ssh HOST`) para revisar y aceptar la huella. Oculus nunca la acepta por su cuenta. |
+  | `Could not resolve hostname`, `Connection refused`, `timed out`, `No route to host` | `Unreachable` | La última línea de `ssh`. |
+  | `administratively prohibited` (al abrir el canal) | `Unreachable` | El bastión no permite reenvío de puertos (`AllowTcpForwarding`). |
+  | `ssh` no encontrado | `NotFound` | No se encontró `ssh` en el `PATH`. |
+
+  La última línea de `ssh` va en la pista (truncada y pasada por `scrub`). Solo contiene host, usuario y puerto; `ssh` no escribe secretos ahí.
+- **Trazas:** túnel arriba o abajo, con host, puerto, tiempo y código de salida. Nunca el entorno.
+- **Lo que no pasa por el túnel:** los exec plugins (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`), que hablan directamente con su nube.
+- **Terminal (etapa 5, D8):** `kubectl` en la terminal integrada no pasaría por el túnel. Hay dos vías, a decidir en la etapa 5:
+  - poner `HTTPS_PROXY=socks5://127.0.0.1:PUERTO` en el entorno del PTY: Go lo respeta, pero también afecta a `curl` y a las CLIs de nube, así que hace falta `NO_PROXY`;
+  - una entrada de clúster con `proxy-url` en el kubeconfig mínimo: copia `server` y la CA, que no son credenciales, pero rompe la regla de D8 de copiar solo nombres.
+
 ## Suscripción a recursos (ciclo de vida)
 
 ```ts

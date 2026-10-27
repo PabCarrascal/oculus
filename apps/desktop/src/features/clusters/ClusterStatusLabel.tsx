@@ -17,12 +17,23 @@ export function statusTone(status: ClusterStatus): Tone {
 
 export function ClusterStatusLabel({ status }: { status: ClusterStatus }) {
   const { t } = useTranslation();
-  const text =
-    status.state === "connected"
-      ? t("clusters.state.connected", { version: status.serverVersion })
-      : status.state === "connecting"
-        ? t(`clusters.state.${status.step}`)
-        : t(`clusters.state.${status.state}`);
+  let text: string;
+  if (status.state === "connected") {
+    const tunnel = status.tunnel;
+    text =
+      tunnel?.state === "reconnecting"
+        ? t("clusters.state.tunnelReconnecting")
+        : tunnel
+          ? t("clusters.state.connectedTunnel", {
+              version: status.serverVersion,
+              host: tunnel.host,
+            })
+          : t("clusters.state.connected", { version: status.serverVersion });
+  } else if (status.state === "connecting") {
+    text = t(`clusters.state.${status.step}` as const);
+  } else {
+    text = t(`clusters.state.${status.state}` as const);
+  }
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted">
       <StatusDot tone={statusTone(status)} />

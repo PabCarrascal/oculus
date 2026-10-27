@@ -248,6 +248,7 @@ fn session(status: u16, response: Value) -> (ClusterSession, Seen) {
         default_namespace: "default".into(),
         watches,
         schemas: Default::default(),
+        tunnel: None,
     };
     (s, seen)
 }

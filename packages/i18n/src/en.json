@@ -67,7 +67,10 @@
       "version": "Contacting the API server…",
       "discovery": "Discovering resources…",
       "connected": "Connected · {{version}}",
-      "error": "Connection error"
+      "error": "Connection error",
+      "tunnel": "Opening SSH tunnel…",
+      "connectedTunnel": "Connected · {{version}} · tunnel {{host}}",
+      "tunnelReconnecting": "Reconnecting SSH tunnel…"
     },
     "readOnly": "Read-only",
     "protected": "Protected",
@@ -96,7 +99,15 @@
       "access": "Access control",
       "cluster": "Cluster",
       "custom": "Custom resources (CRDs)"
-    }
+    },
+    "sshTunnel": "SSH tunnel",
+    "sshTunnelHint": "An alias from ~/.ssh/config or user@host[:port], using your keys and SSH agent. Applies on the next connection.",
+    "sshTunnelCheck": "Test",
+    "sshTunnelChecking": "Testing…",
+    "sshTunnelResolved": "ssh will go to {{user}}@{{hostname}}:{{port}}",
+    "sshTunnelVia": "via {{jump}}",
+    "sshTunnelProxyUrl": "The kubeconfig already sets a proxy-url for this cluster; the tunnel replaces it.",
+    "sshTunnelNone": "No tunnel"
   },
   "statusBar": {
     "connected_one": "1 cluster connected",

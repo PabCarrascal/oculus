@@ -11,7 +11,7 @@ mod settings;
 pub use app::{AppInfo, StartupReport};
 pub use cluster::{
     Category, ClusterId, ClusterPrefs, ClusterStatus, ClusterSummary, ConnectStep, KubeconfigSource,
-    ResourceKind, SourceOrigin,
+    ResourceKind, SourceOrigin, SshHostInfo, SshTunnelPrefs, TunnelState, TunnelStatus,
 };
 pub use detail::{EventInfo, ObjectRef, RelatedRef, Relation, ResourceDetail, UpdateResult};
 pub use error::{ErrorCode, ErrorDetails, FieldCause, OculusError};

@@ -6,7 +6,7 @@ Este directorio contiene el diseño. La implementación va por la **etapa 0** (c
 
 | Documento                                   | Contenido                                                                                                     |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [01 · Arquitectura](01-arquitectura.md)     | Componentes, flujo de datos, modelo de estado y decisiones técnicas (D1–D12) con las alternativas descartadas |
+| [01 · Arquitectura](01-arquitectura.md)     | Componentes, flujo de datos, modelo de estado y decisiones técnicas (D1–D13) con las alternativas descartadas |
 | [02 · Estructura](02-estructura.md)         | Monorepo, crates, paquetes y convenciones                                                                     |
 | [03 · Contrato IPC](03-contrato-ipc.md)     | Comandos, channels, eventos y tipos entre Rust y la UI                                                        |
 | [04 · Wireframes](04-wireframes.md)         | Selector de clústeres, lista, detalle, YAML, logs, terminal y paleta de comandos                              |

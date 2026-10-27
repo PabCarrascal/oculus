@@ -233,3 +233,125 @@ async fn detalle_edicion_y_secret_contra_un_cluster_real() {
     println!("  (segunda vez, de caché: {} ms)", started.elapsed().as_millis());
     assert!(svc.schema(&id, "demo.oculus.test", "v1", "Gadget").await.unwrap().is_some());
 }
+
+/// El hito del túnel SSH (D13). Necesita además el bastión de
+/// `tests/fixtures/ssh/setup.sh`:
+///
+///   OCULUS_IT_SSH_DIR=/ruta cargo test -p oculus-core --test kind tunel -- --ignored --nocapture
+#[tokio::test]
+#[ignore = "necesita kind y el bastión: OCULUS_IT_SSH_DIR"]
+async fn tunel_ssh_hasta_un_cluster_real() {
+    use oculus_protocol::{ClusterPrefs, ObjectRef, SshTunnelPrefs, TunnelState, TunnelStatus};
+
+    let dir =
+        std::path::PathBuf::from(std::env::var_os("OCULUS_IT_SSH_DIR").expect("define OCULUS_IT_SSH_DIR"));
+    let (_tmp, svc, log) = service(dir.join("kind-internal.kubeconfig").into());
+    let svc = svc.with_ssh_args(vec!["-F".into(), dir.join("ssh_config").display().to_string()]);
+    let id = svc.list_clusters()[0].id.clone();
+    let use_host = |host: &str| {
+        let prefs =
+            ClusterPrefs { ssh_tunnel: Some(SshTunnelPrefs { host: host.into() }), ..Default::default() };
+        svc.set_prefs(&id, prefs).unwrap();
+    };
+
+    // Sin túnel, el nombre interno del API server no resuelve desde aquí.
+    svc.connect(&id, vec![]).unwrap();
+    let status = wait_final(&svc, &id, Duration::from_secs(30)).await;
+    assert!(matches!(status, ClusterStatus::Error { .. }), "sin túnel no debería llegar: {status:?}");
+
+    // Un usuario sin clave: Unauthorized con su pista, rápido.
+    use_host("oculus-it-sinclave");
+    let started = Instant::now();
+    svc.connect(&id, vec![]).unwrap();
+    let ClusterStatus::Error { error } = wait_final(&svc, &id, Duration::from_secs(20)).await else {
+        panic!("debía fallar")
+    };
+    println!("sin clave → {:?} en {} ms", error.code, started.elapsed().as_millis());
+    assert_eq!(error.code, ErrorCode::Unauthorized);
+    assert!(error.details.unwrap().hint.unwrap().contains("ssh-add"));
+    assert!(started.elapsed() < Duration::from_secs(15));
+
+    // Con el bastión: túnel, autenticación, versión y discovery.
+    use_host("oculus-it-bastion");
+    log.lock().unwrap().clear();
+    let started = Instant::now();
+    svc.connect(&id, vec![]).unwrap();
+    let status = wait_final(&svc, &id, Duration::from_secs(60)).await;
+    let ClusterStatus::Connected { tunnel, .. } = &status else { panic!("{status:?}") };
+    assert_eq!(tunnel, &Some(TunnelStatus { host: "oculus-it-bastion".into(), state: TunnelState::Up }));
+    assert!(
+        log.lock()
+            .unwrap()
+            .iter()
+            .any(|(_, s)| *s == ClusterStatus::Connecting { step: ConnectStep::Tunnel })
+    );
+    println!("conectado por el túnel en {} ms", started.elapsed().as_millis());
+
+    let web = ObjectRef {
+        group: "apps".into(),
+        version: "v1".into(),
+        plural: "deployments".into(),
+        namespace: Some("demo".into()),
+        name: "web".into(),
+    };
+    let d = svc.detail(&id, &web).await.unwrap();
+    let base: serde_json::Value = serde_json::from_str(&d.object_json).unwrap();
+    let mut edited = base.clone();
+    edited["spec"]["replicas"] = serde_json::json!(base["spec"]["replicas"].as_i64().unwrap_or(3) + 1);
+    svc.update(&id, &web, &base.to_string(), &edited.to_string(), true, false).await.unwrap();
+
+    // Se cae ssh: «reconnecting» y vuelve solo, sin reconectar el clúster.
+    log.lock().unwrap().clear();
+    // Anclado al principio: solo el ssh del túnel, no otro proceso que mencione el host.
+    const OUR_SSH: &str = "^[^ ]*ssh -N -D 127[.]0[.]0[.]1:[0-9]+ .*-- oculus-it-bastion$";
+    let killed = std::process::Command::new("pkill").args(["-f", OUR_SSH]).status().unwrap();
+    assert!(killed.success(), "no había ningún ssh que matar");
+    let started = Instant::now();
+    let back_up = |s: &ClusterStatus| {
+        matches!(
+            s,
+            ClusterStatus::Connected { tunnel: Some(TunnelStatus { state: TunnelState::Up, .. }), .. }
+        )
+    };
+    loop {
+        let seen_reconnecting = log.lock().unwrap().iter().any(|(_, s)| {
+            matches!(
+                s,
+                ClusterStatus::Connected {
+                    degraded: true,
+                    tunnel: Some(TunnelStatus { state: TunnelState::Reconnecting, .. }),
+                    ..
+                }
+            )
+        });
+        if seen_reconnecting && log.lock().unwrap().last().is_some_and(|(_, s)| back_up(s)) {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "el túnel no volvió: {:?}", log.lock().unwrap());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    println!("túnel restablecido en {} ms", started.elapsed().as_millis());
+    assert!(
+        !log.lock().unwrap().iter().any(|(_, s)| matches!(s, ClusterStatus::Connecting { .. })),
+        "no debía reconectar el clúster entero"
+    );
+    svc.detail(&id, &web).await.unwrap();
+    assert!(!svc.namespaces(&id).await.unwrap().is_empty());
+
+    // Al desconectar, ssh desaparece.
+    svc.disconnect(&id);
+    let started = Instant::now();
+    loop {
+        let alive = std::process::Command::new("pgrep").args(["-fl", OUR_SSH]).output().unwrap();
+        if alive.stdout.is_empty() {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "quedó un ssh vivo: {}",
+            String::from_utf8_lossy(&alive.stdout)
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    println!("ssh cerrado {} ms después de desconectar", started.elapsed().as_millis());
+}

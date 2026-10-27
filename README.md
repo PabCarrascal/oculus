@@ -47,6 +47,18 @@ OCULUS_IT_KUBECONFIG=/tmp/oculus-it.kubeconfig cargo test -p oculus-core --test 
 
 `setup.sh` crea un clúster kind con 100 CRDs y escribe su kubeconfig en un fichero aparte: nunca toca `~/.kube/config` ni `KUBECONFIG`.
 
+El túnel SSH se prueba además con un bastión en la red Docker de kind:
+
+```bash
+tests/fixtures/ssh/setup.sh /tmp/oculus-it-ssh
+```
+
+```bash
+OCULUS_IT_KUBECONFIG=/tmp/oculus-it.kubeconfig OCULUS_IT_SSH_DIR=/tmp/oculus-it-ssh cargo test -p oculus-core --test kind -- --ignored --nocapture
+```
+
+La clave, el `known_hosts` y el `ssh_config` de la prueba se generan en ese directorio y se pasan con `ssh -F`: no se lee ni se toca `~/.ssh` ni el agente.
+
 ### Escala (10.000 pods con KWOK)
 
 ```bash

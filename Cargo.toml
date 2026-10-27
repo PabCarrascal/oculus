@@ -20,8 +20,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 sys-locale = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process"] }
-kube = { version = "4.2", default-features = false, features = ["client", "config", "runtime", "jsonpatch", "rustls-tls", "ring", "oidc", "http-proxy", "gzip"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "net", "io-util"] }
+kube = { version = "4.2", default-features = false, features = ["client", "config", "runtime", "jsonpatch", "rustls-tls", "ring", "oidc", "http-proxy", "socks5", "gzip"] }
 # La versión de la API más antigua soportada: no usamos campos que un clúster viejo no tenga.
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 notify = "8"

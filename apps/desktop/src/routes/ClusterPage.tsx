@@ -63,6 +63,12 @@ export function ClusterPage() {
       <dl className="mt-6 grid grid-cols-[max-content_1fr] gap-x-8 gap-y-2 text-sm">
         <dt className="text-muted">{t("clusters.server")}</dt>
         <dd className="truncate font-mono text-xs leading-5">{cluster.server ?? "—"}</dd>
+        {cluster.prefs.sshTunnel && (
+          <>
+            <dt className="text-muted">{t("clusters.sshTunnel")}</dt>
+            <dd className="truncate font-mono text-xs leading-5">{cluster.prefs.sshTunnel.host}</dd>
+          </>
+        )}
         <dt className="text-muted">{t("clusters.defaultNamespace")}</dt>
         <dd>{cluster.defaultNamespace ?? "default"}</dd>
         {cluster.status.state === "connected" && (

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use oculus_protocol::{ClusterId, ClusterPrefs, OculusError};
+use oculus_protocol::{ClusterId, ClusterPrefs, OculusError, SshTunnelPrefs};
 use serde::{Deserialize, Serialize};
 
 use crate::kubeconfig::canonical;
@@ -107,6 +107,13 @@ fn normalize(mut prefs: ClusterPrefs) -> Result<ClusterPrefs, OculusError> {
         }
         prefs.color = Some(color.to_ascii_lowercase());
     }
+    // Un host vacío equivale a quitar el túnel.
+    prefs.ssh_tunnel = match prefs.ssh_tunnel {
+        Some(t) if !t.host.trim().is_empty() => {
+            Some(SshTunnelPrefs { host: crate::tunnel::validate_host(&t.host)? })
+        }
+        _ => None,
+    };
     Ok(prefs)
 }
 
@@ -130,6 +137,7 @@ mod tests {
             color: Some("#FF8800".into()),
             read_only: true,
             protected: true,
+            ssh_tunnel: Some(SshTunnelPrefs { host: " ops@bastion:2222 ".into() }),
         };
         store.set_prefs("c1", prefs).unwrap();
 
@@ -138,6 +146,7 @@ mod tests {
         assert_eq!(p.alias.as_deref(), Some("prod EU"));
         assert_eq!(p.color.as_deref(), Some("#ff8800"));
         assert!(p.read_only && p.protected);
+        assert_eq!(p.ssh_tunnel.unwrap().host, "ops@bastion:2222");
     }
 
     #[test]
@@ -147,6 +156,12 @@ mod tests {
         assert_eq!(store.set_prefs("c1", bad_color).unwrap_err().code, ErrorCode::Invalid);
         let long = ClusterPrefs { alias: Some("x".repeat(65)), ..Default::default() };
         assert_eq!(store.set_prefs("c1", long).unwrap_err().code, ErrorCode::Invalid);
+        let tunnel = |host: &str| ClusterPrefs {
+            ssh_tunnel: Some(SshTunnelPrefs { host: host.into() }),
+            ..Default::default()
+        };
+        assert_eq!(store.set_prefs("c1", tunnel("-oProxyCommand=x")).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(store.set_prefs("c1", tunnel("  ")).unwrap().ssh_tunnel, None);
     }
 
     #[test]

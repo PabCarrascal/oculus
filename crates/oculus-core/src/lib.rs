@@ -7,4 +7,5 @@ pub mod resources;
 pub mod service;
 pub mod settings;
 pub mod shell_env;
+pub mod tunnel;
 pub mod workspace;

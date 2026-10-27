@@ -32,9 +32,13 @@ export type {
   Settings_Serialize as Settings,
   SettingsPatch_Deserialize as SettingsPatch,
   SourceOrigin,
+  SshHostInfo_Serialize as SshHostInfo,
+  SshTunnelPrefs,
   StartupReport,
   Theme,
   Tone,
+  TunnelState,
+  TunnelStatus,
   UpdateResult,
   WatchState,
 } from "./bindings";

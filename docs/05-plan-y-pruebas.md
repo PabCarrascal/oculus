@@ -58,6 +58,30 @@ Pendiente: la memoria del webview real (WKWebView) y los fps dentro de la app, p
 
 **Resultado (2026-10-27, contra kind):** editar y aplicar un Deployment funciona, también en pleno escalado (con PUT daba conflicto; ver 03). Un campo desconocido (`spec.replicass`) y un valor inválido (`spec.replicas: -1`) vuelven con su ruta exacta y se marcan en su línea. Un cambio ajeno en el mismo campo da conflicto con diferencias y "sobrescribir". Primera apertura del editor: 323 ms en la build de producción (Monaco 0.52 y monaco-yaml, unos 3,5 MB en bloques aparte que no se descargan hasta abrir la pestaña). Arranque: ~400 ms. Mientras se escribe, el esquema real de `apps/v1` marca tipos incorrectos en su línea, también a varios `$ref` de profundidad (`replicas: tres`, `containerPort: "80"`). En la app real hubo que ajustar la CSP de Tauri (estilos y workers) y bajar a Monaco 0.52, porque el validador no arrancaba (ver D6 en 01). Con eso, la app real carga el esquema y el log queda sin errores de workers ni de esquema.
 
+## Añadido · Túnel SSH por clúster ✅
+
+Antes de la etapa 4, para que exec y port-forward nazcan ya probados a través del túnel. Diseño en D13 (01) y en 03.
+
+- Preferencia `sshTunnel.host` en el diálogo del clúster, con «Probar» (`ssh -G`, sin conectar) y aviso si el kubeconfig ya trae `proxy-url`.
+- Túnel `ssh -D` compartido por host, con paso «tunnel» en la conexión, reconexión en el mismo puerto e indicador en la barra lateral y en la de estado.
+- Feature `kube/socks5`. Pruebas unitarias de la validación del host, la línea de órdenes y la clasificación de la salida de error de `ssh`.
+
+**Hito (contra kind):** un contenedor `sshd` (imagen propia sobre Alpine, sin imágenes de terceros) en la red Docker `kind`, con clave y `known_hosts` generados para la prueba y pasados con `-F` (nunca el `~/.ssh` del usuario). El kubeconfig de `kind get kubeconfig --internal` apunta a `https://oculus-it-control-plane:6443`, un nombre que el Mac no puede resolver; el certificado de kind lo incluye. Conectar por el túnel, abrir el detalle y aplicar un cambio funcionan. Al matar el `ssh`, la sesión pasa a «reconnecting» y vuelve sola **sin crear otro `Client`**, con los watchers al día. Un host sin la clave da `Unauthorized` con su pista en **< 15 s**.
+
+**Resultado (2026-10-27, kind + bastión Alpine):**
+- Sin túnel, el nombre interno del API server no resuelve, como se esperaba.
+- Un usuario sin clave da `Unauthorized` con la pista de `ssh-add` en ~300 ms.
+- Por el túnel, la conexión completa tarda 177 ms. El detalle y un dry-run funcionan.
+- Al matar `ssh`, la sesión pasa a «reconnecting» y vuelve en 1,1 s sin reconectar el clúster: el mismo `Client`, sin estados `connecting`. El detalle y los namespaces responden después.
+- Al desconectar, `ssh` desaparece en ~100 ms.
+
+En la app real (build de producción, con el agente y el `~/.ssh` del usuario), el túnel se abre en 114 ms y el clúster conecta por él, sin errores en el log. Esta prueba destapó que `ssh` no entiende `usuario@host:puerto`; ahora se le pasa como `ssh://` (ver 03).
+
+Pendiente:
+- en la app real, la reconexión al matar `ssh` y un bastión de verdad del usuario;
+- un bastión con `ProxyJump`;
+- Windows (OpenSSH de serie y huérfanos).
+
 ## Etapa 4 · Operaciones
 
 - Logs (multicontenedor y por workload, seguir, buscar, nivel, descarga) y exec con xterm.js.

@@ -201,6 +201,19 @@ Cada decisión indica qué se eligió, por qué, y qué alternativa se descartó
 - Gráficas (fase 2) con **uPlot**: muy ligero y rápido con series largas.
 - **Descartadas:** Redux (demasiada ceremonia para un estado que mayormente llega del backend) y librerías de componentes completas tipo MUI (pesan más y cuesta darles una identidad visual propia).
 
+### D13 · Túnel SSH por clúster
+
+Para clústeres cuyo API server solo se alcanza desde un bastión. Es una preferencia del clúster (`sshTunnel.host`, un alias de `~/.ssh/config` o `usuario@host[:puerto]`), no un ajuste global: cada clúster tiene su bastión. El detalle (arranque, ciclo de vida, errores) está en 03.
+
+- Al conectar, Oculus lanza el **`ssh` del sistema** con `-D` (un proxy SOCKS5 en `127.0.0.1`) y el cliente de kube-rs sale por él (`proxy_url = socks5://127.0.0.1:PUERTO`, feature `kube/socks5`). Así valen tal cual las claves, el agente, `known_hosts`, `ProxyJump` y todo lo que el usuario ya tenga en `~/.ssh/config`. Oculus no guarda ninguna credencial (D9).
+- Los nombres se resuelven **en el bastión** (es lo que hace por defecto el conector SOCKS5 de hyper-util): un API server con DNS privado funciona, y un `server: https://127.0.0.1:6443` apunta al propio bastión, que es lo que significa en ese caso.
+- La URL del API server no cambia, así que la verificación TLS sigue contra el nombre real del certificado. Exec, logs y port-forward (etapa 4) van por el mismo cliente y, por tanto, por el mismo túnel.
+- Sin diálogo: `ssh` va con `BatchMode=yes`, porque la app no tiene terminal donde preguntar. **Limitación:** no sirven los bastiones con segundo factor interactivo (Duo, TOTP) ni las claves con contraseña sin agente; la vía futura es `SSH_ASKPASS` con un diálogo de Oculus.
+- **Descartadas:**
+  - *`ssh -L` a un puerto local*: obliga a reescribir el `server` del kubeconfig a `127.0.0.1`, y el certificado del API server deja de coincidir (habría que forzar `tls-server-name` por clúster).
+  - *SSH dentro de la app (`russh`)*: tendríamos que reimplementar agente, `known_hosts`, `ProxyJump`, `Match` y el resto de `ssh_config`, y guardar o pedir claves. Más superficie y peor compatibilidad que el binario que el usuario ya usa.
+  - *Un proxy SOCKS que el usuario levante a mano* (`proxy-url` en su kubeconfig): ya funciona sin hacer nada más, pero obliga a arrancar el túnel fuera y no se recupera solo.
+
 ## Fase 2: puntos de anclaje en la arquitectura
 
 No se implementan ahora, pero el diseño les deja sitio:

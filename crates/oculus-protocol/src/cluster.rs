@@ -37,11 +37,47 @@ pub struct ClusterPrefs {
     pub read_only: bool,
     /// Las acciones destructivas exigen escribir el nombre del recurso.
     pub protected: bool,
+    /// Conectar a través de un bastión con `ssh -D` (D13).
+    pub ssh_tunnel: Option<SshTunnelPrefs>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelPrefs {
+    /// Alias de `~/.ssh/config` o `usuario@host[:puerto]`.
+    pub host: String,
+}
+
+/// Lo que `ssh -G` entiende de un host, sin conectar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHostInfo {
+    pub hostname: String,
+    pub user: String,
+    pub port: u16,
+    pub proxy_jump: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelState {
+    Up,
+    /// `ssh` terminó y se está relanzando en el mismo puerto.
+    Reconnecting,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelStatus {
+    pub host: String,
+    pub state: TunnelState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectStep {
+    /// Levantando el túnel SSH; solo si el clúster lo usa.
+    Tunnel,
     Auth,
     Version,
     Discovery,
@@ -52,7 +88,7 @@ pub enum ConnectStep {
 pub enum ClusterStatus {
     Disconnected,
     Connecting { step: ConnectStep },
-    Connected { server_version: String, degraded: bool },
+    Connected { server_version: String, degraded: bool, tunnel: Option<TunnelStatus> },
     Error { error: OculusError },
 }
 
@@ -65,6 +101,8 @@ pub struct ClusterSummary {
     /// URL del API server; solo se muestra.
     pub server: Option<String>,
     pub default_namespace: Option<String>,
+    /// El kubeconfig ya define un `proxy-url` para este clúster (no se envía la URL).
+    pub has_proxy_url: bool,
     pub prefs: ClusterPrefs,
     pub status: ClusterStatus,
 }
@@ -102,10 +140,11 @@ mod tests {
 
     #[test]
     fn el_estado_va_etiquetado_y_en_camel_case() {
-        let connected = ClusterStatus::Connected { server_version: "v1.32.0".into(), degraded: false };
+        let connected =
+            ClusterStatus::Connected { server_version: "v1.32.0".into(), degraded: false, tunnel: None };
         assert_eq!(
             serde_json::to_value(&connected).unwrap(),
-            serde_json::json!({ "state": "connected", "serverVersion": "v1.32.0", "degraded": false })
+            serde_json::json!({ "state": "connected", "serverVersion": "v1.32.0", "degraded": false, "tunnel": null })
         );
 
         let err = ClusterStatus::Error { error: OculusError::new(ErrorCode::Unreachable, "timeout") };

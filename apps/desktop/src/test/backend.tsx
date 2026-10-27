@@ -95,6 +95,8 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
         return null;
       case "cluster_set_prefs":
         return a.prefs;
+      case "ssh_tunnel_check":
+        return { hostname: "10.0.0.7", user: "ops", port: 22, proxyJump: "salto" };
       case "discovery_get":
         return state.kinds;
       case "namespaces_list":

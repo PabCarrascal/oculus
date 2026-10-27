@@ -20,6 +20,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::clusters::cluster_connect,
             commands::clusters::cluster_disconnect,
             commands::clusters::cluster_set_prefs,
+            commands::clusters::ssh_tunnel_check,
             commands::clusters::discovery_get,
             commands::clusters::namespaces_list,
             commands::resources::resources_subscribe,

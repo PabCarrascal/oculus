@@ -1,4 +1,6 @@
-use oculus_protocol::{ClusterPrefs, ClusterSummary, KubeconfigSource, OculusError, ResourceKind};
+use oculus_protocol::{
+    ClusterPrefs, ClusterSummary, KubeconfigSource, OculusError, ResourceKind, SshHostInfo,
+};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_specta::Event;
@@ -64,6 +66,14 @@ pub async fn clusters_list(state: State<'_, AppState>) -> Result<Vec<ClusterSumm
 pub async fn cluster_connect(state: State<'_, AppState>, cluster_id: String) -> Result<(), OculusError> {
     let extra_path = state.settings.get().extra_path;
     state.clusters.connect(&cluster_id, extra_path)
+}
+
+/// Lo que `ssh` entiende de un host, sin conectar (`ssh -G`).
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_tunnel_check(state: State<'_, AppState>, host: String) -> Result<SshHostInfo, OculusError> {
+    let extra_path = state.settings.get().extra_path;
+    state.clusters.ssh_check(&host, extra_path).await
 }
 
 #[tauri::command]

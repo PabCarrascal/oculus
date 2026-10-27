@@ -77,6 +77,8 @@ pub struct ContextEntry {
     pub context_name: String,
     pub server: Option<String>,
     pub default_namespace: Option<String>,
+    /// El clúster ya define su propio `proxy-url`; un túnel SSH lo sustituiría.
+    pub has_proxy_url: bool,
 }
 
 struct LoadedFile {
@@ -129,16 +131,19 @@ impl Catalog {
             let file = &catalog.files[&id];
             for named in &file.config.contexts {
                 let Some(context) = &named.context else { continue };
-                let server = catalog.resolve_view(&id).and_then(|view| {
+                let cluster = catalog.resolve_view(&id).and_then(|view| {
                     let cluster_name = context.cluster.as_str();
-                    view.clusters.iter().find(|c| c.name == cluster_name)?.cluster.as_ref()?.server.clone()
+                    view.clusters.iter().find(|c| c.name == cluster_name)?.cluster.clone()
                 });
+                let server = cluster.as_ref().and_then(|c| c.server.clone());
+                let has_proxy_url = cluster.as_ref().is_some_and(|c| c.proxy_url.is_some());
                 catalog.contexts.push(ContextEntry {
                     id: cluster_id(&path, &named.name),
                     source_id: id.clone(),
                     context_name: named.name.clone(),
                     server,
                     default_namespace: context.namespace.clone(),
+                    has_proxy_url,
                 });
             }
         }

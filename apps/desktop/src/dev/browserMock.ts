@@ -13,7 +13,7 @@ import type {
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
-const prefs = { alias: null, color: null, readOnly: false, protected: false };
+const prefs = { alias: null, color: null, readOnly: false, protected: false, sshTunnel: null };
 const sources: KubeconfigSource[] = [
   { id: "s1", path: "~/.kube/config", origin: "default", error: null },
   { id: "s2", path: "~/work/clientes.yaml", origin: "manual", error: null },
@@ -28,19 +28,27 @@ const clusters: ClusterSummary[] = [
   {
     id: "kind",
     contextName: "kind-oculus-it",
+    hasProxyUrl: false,
     sourceId: "s1",
     server: "https://127.0.0.1:52341",
     defaultNamespace: null,
     prefs,
-    status: { state: "connected", serverVersion: "v1.37.0", degraded: false },
+    status: { state: "connected", serverVersion: "v1.37.0", degraded: false, tunnel: null },
   },
   {
     id: "prod",
     contextName: "arn:aws:eks:eu-west-1:123456789012:cluster/prod",
+    hasProxyUrl: false,
     sourceId: "s1",
     server: "https://A1B2C3.gr7.eu-west-1.eks.amazonaws.com",
     defaultNamespace: "payments",
-    prefs: { alias: "prod-eu", color: "#c8323b", readOnly: false, protected: true },
+    prefs: {
+      alias: "prod-eu",
+      color: "#c8323b",
+      readOnly: false,
+      protected: true,
+      sshTunnel: null,
+    },
     status: {
       state: "error",
       error: {
@@ -57,10 +65,17 @@ const clusters: ClusterSummary[] = [
   {
     id: "staging",
     contextName: "gke_acme_europe-west1_staging",
+    hasProxyUrl: false,
     sourceId: "s2",
     server: "https://34.90.1.2",
     defaultNamespace: null,
-    prefs: { alias: "staging", color: "#1f8a4c", readOnly: true, protected: false },
+    prefs: {
+      alias: "staging",
+      color: "#1f8a4c",
+      readOnly: true,
+      protected: false,
+      sshTunnel: null,
+    },
     status: { state: "disconnected" },
   },
 ];
@@ -234,7 +249,11 @@ function handle(cmd: string, args: unknown): unknown {
       setStatus(id, { state: "connecting", step: "auth" }, 0);
       setStatus(id, { state: "connecting", step: "version" }, 400);
       setStatus(id, { state: "connecting", step: "discovery" }, 800);
-      setStatus(id, { state: "connected", serverVersion: "v1.36.2", degraded: false }, 1200);
+      setStatus(
+        id,
+        { state: "connected", serverVersion: "v1.36.2", degraded: false, tunnel: null },
+        1200,
+      );
       return null;
     }
     case "cluster_disconnect":
@@ -243,6 +262,8 @@ function handle(cmd: string, args: unknown): unknown {
     case "cluster_set_prefs":
       update(a.clusterId as string, { prefs: a.prefs as ClusterSummary["prefs"] });
       return a.prefs;
+    case "ssh_tunnel_check":
+      return { hostname: String(a.host), user: "ops", port: 22, proxyJump: null };
     case "discovery_get":
       return kinds;
     case "namespaces_list":

@@ -7,6 +7,7 @@ pub mod exec;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,9 +15,12 @@ use k8s_openapi::api::core::v1::Namespace;
 use kube::api::{Api, ListParams};
 use kube::{Client, Config};
 use oculus_protocol::{
-    ClusterId, ClusterStatus, ConnectStep, ErrorCode, KindRef, OculusError, ResourceKind, Scope,
+    ClusterId, ClusterStatus, ConnectStep, ErrorCode, KindRef, OculusError, ResourceKind, Scope, TunnelState,
+    TunnelStatus,
 };
 use oculus_watch::{KindInfo, KubeSource, Subscriber, SubscriptionId, WatchManager, WatchOptions};
+
+use crate::tunnel::{SshLauncher, Tunnel, TunnelManager, TunnelPhase, TunnelTimeouts};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Timeouts {
@@ -53,6 +57,16 @@ pub struct ClusterSession {
     pub watches: WatchManager,
     /// Esquemas OpenAPI v3 por "apis/grupo/versión", para el editor.
     pub schemas: tokio::sync::Mutex<HashMap<String, Arc<serde_json::Value>>>,
+    /// Túnel SSH por el que sale el cliente, si el clúster lo usa. Al soltar la
+    /// sesión se suelta su parte del túnel.
+    pub tunnel: Option<Arc<Tunnel>>,
+}
+
+/// Túnel que hay que levantar antes de conectar. El lanzador es asíncrono porque
+/// necesita el entorno de la shell de login.
+pub struct TunnelRequest {
+    pub host: String,
+    pub launcher: Pin<Box<dyn Future<Output = Result<SshLauncher, OculusError>> + Send>>,
 }
 
 impl ClusterSession {
@@ -118,11 +132,18 @@ pub struct ClusterManager {
     entries: Arc<Mutex<HashMap<ClusterId, Entry>>>,
     sink: StatusSink,
     timeouts: Timeouts,
+    tunnels: TunnelManager,
 }
 
 impl ClusterManager {
     pub fn new(sink: StatusSink, timeouts: Timeouts) -> Self {
-        Self { entries: Arc::default(), sink, timeouts }
+        let tunnels = TunnelManager::new(None, TunnelTimeouts::default());
+        Self { entries: Arc::default(), sink, timeouts, tunnels }
+    }
+
+    pub fn with_tunnels(mut self, tunnels: TunnelManager) -> Self {
+        self.tunnels = tunnels;
+        self
     }
 
     pub fn status(&self, id: &str) -> ClusterStatus {
@@ -144,6 +165,21 @@ impl ClusterManager {
     where
         F: Future<Output = Result<Client, OculusError>> + Send + 'static,
     {
+        self.connect_with(id, default_namespace, None, move |_| prepare);
+    }
+
+    /// Como `connect`, pero antes levanta el túnel (si hay) y pasa su `proxy_url`
+    /// a `prepare`.
+    pub fn connect_with<P, F>(
+        &self,
+        id: ClusterId,
+        default_namespace: String,
+        tunnel: Option<TunnelRequest>,
+        prepare: P,
+    ) where
+        P: FnOnce(Option<http::Uri>) -> F + Send + 'static,
+        F: Future<Output = Result<Client, OculusError>> + Send + 'static,
+    {
         let generation = {
             let mut entries = self.lock();
             let entry = entries.entry(id.clone()).or_default();
@@ -153,18 +189,26 @@ impl ClusterManager {
             entry.generation += 1;
             entry.generation
         };
-        self.set_status(&id, generation, ClusterStatus::Connecting { step: ConnectStep::Auth });
+        let step = if tunnel.is_some() { ConnectStep::Tunnel } else { ConnectStep::Auth };
+        self.set_status(&id, generation, ClusterStatus::Connecting { step });
 
         let this = self.clone();
         let task_id = id.clone();
         let handle = tokio::spawn(async move {
-            let result = this.run_connect(&task_id, generation, default_namespace, prepare).await;
+            let result = this.run_connect(&task_id, generation, default_namespace, tunnel, prepare).await;
             match result {
                 Ok(session) => {
                     let status = ClusterStatus::Connected {
                         server_version: session.server_version.clone(),
                         degraded: false,
+                        tunnel: session
+                            .tunnel
+                            .as_ref()
+                            .map(|t| TunnelStatus { host: t.host.clone(), state: TunnelState::Up }),
                     };
+                    if let Some(tunnel) = &session.tunnel {
+                        this.follow_tunnel(&task_id, generation, session.server_version.clone(), tunnel);
+                    }
                     if let Some(entry) = this.lock().get_mut(&task_id).filter(|e| e.generation == generation)
                     {
                         entry.session = Some(Arc::new(session));
@@ -182,31 +226,48 @@ impl ClusterManager {
         }
     }
 
-    async fn run_connect<F>(
+    async fn run_connect<P, F>(
         &self,
         id: &ClusterId,
         generation: u64,
         default_namespace: String,
-        prepare: F,
+        tunnel: Option<TunnelRequest>,
+        prepare: P,
     ) -> Result<ClusterSession, OculusError>
     where
+        P: FnOnce(Option<http::Uri>) -> F,
         F: Future<Output = Result<Client, OculusError>>,
     {
-        let client = prepare.await?;
+        let tunnel = match tunnel {
+            Some(request) => {
+                let launcher = request.launcher.await?;
+                let tunnel = self.tunnels.acquire(&request.host, &launcher).await?;
+                self.set_status(id, generation, ClusterStatus::Connecting { step: ConnectStep::Auth });
+                Some(tunnel)
+            }
+            None => None,
+        };
+        let client = prepare(tunnel.as_ref().map(|t| t.proxy_url())).await?;
+        let explain = |error: OculusError| match &tunnel {
+            Some(t) => explain_tunnel_error(error, t),
+            None => error,
+        };
 
         self.set_status(id, generation, ClusterStatus::Connecting { step: ConnectStep::Version });
         let secs = self.timeouts.version.as_secs();
         let version = tokio::time::timeout(self.timeouts.version, client.apiserver_version())
             .await
-            .map_err(|_| errors::timeout("Conexión con el API server", secs))?
-            .map_err(|e| errors::from_kube(&e))?;
+            .map_err(|_| errors::timeout("Conexión con el API server", secs))
+            .and_then(|r| r.map_err(|e| errors::from_kube(&e)))
+            .map_err(explain)?;
 
         self.set_status(id, generation, ClusterStatus::Connecting { step: ConnectStep::Discovery });
         let secs = self.timeouts.discovery.as_secs();
         let kinds = tokio::time::timeout(self.timeouts.discovery, discovery::discover(&client))
             .await
-            .map_err(|_| errors::timeout("Discovery de recursos", secs))?
-            .map_err(|e| errors::from_kube(&e))?;
+            .map_err(|_| errors::timeout("Discovery de recursos", secs))
+            .and_then(|r| r.map_err(|e| errors::from_kube(&e)))
+            .map_err(explain)?;
 
         let source = Arc::new(KubeSource { client: client.clone() });
         let watches = WatchManager::new(source, WatchOptions::default(), errors::from_kube);
@@ -217,7 +278,47 @@ impl ClusterManager {
             default_namespace,
             watches,
             schemas: Default::default(),
+            tunnel,
         })
+    }
+
+    /// Refleja en el estado del clúster lo que le pase al túnel: «reconnecting»
+    /// mientras `ssh` se relanza y error si se abandona.
+    fn follow_tunnel(&self, id: &ClusterId, generation: u64, server_version: String, tunnel: &Tunnel) {
+        let mut phase = tunnel.phase();
+        let host = tunnel.host.clone();
+        let this = self.clone();
+        let id = id.clone();
+        tokio::spawn(async move {
+            // Solo guarda el receptor: si la sesión suelta el túnel, el canal se cierra.
+            while phase.changed().await.is_ok() {
+                let current = phase.borrow_and_update().clone();
+                let state = match current {
+                    TunnelPhase::Failed(error) => {
+                        this.fail_session(&id, generation, error);
+                        return;
+                    }
+                    TunnelPhase::Up => TunnelState::Up,
+                    TunnelPhase::Reconnecting => TunnelState::Reconnecting,
+                };
+                let status = ClusterStatus::Connected {
+                    server_version: server_version.clone(),
+                    degraded: state == TunnelState::Reconnecting,
+                    tunnel: Some(TunnelStatus { host: host.clone(), state }),
+                };
+                this.set_status(&id, generation, status);
+            }
+        });
+    }
+
+    /// La sesión ya no sirve (el túnel se abandonó): se cierra y queda el error.
+    fn fail_session(&self, id: &ClusterId, generation: u64, error: OculusError) {
+        let session =
+            self.lock().get_mut(id).filter(|e| e.generation == generation).and_then(|e| e.session.take());
+        if let Some(session) = session {
+            session.watches.shutdown();
+        }
+        self.set_status(id, generation, ClusterStatus::Error { error });
     }
 
     pub fn disconnect(&self, id: &str) {
@@ -234,6 +335,15 @@ impl ClusterManager {
             entry.generation
         };
         self.set_status(&id.to_owned(), generation, ClusterStatus::Disconnected);
+    }
+
+    /// Cierra todas las sesiones y mata los `ssh` de los túneles. Al salir de la app.
+    pub fn shutdown(&self) {
+        let ids: Vec<ClusterId> = self.lock().keys().cloned().collect();
+        for id in ids {
+            self.disconnect(&id);
+        }
+        self.tunnels.kill_all();
     }
 
     /// Error del paso previo a conectar (por ejemplo, el contexto ya no existe).
@@ -266,6 +376,23 @@ impl ClusterManager {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<ClusterId, Entry>> {
         self.entries.lock().expect("lock de sesiones envenenado")
     }
+}
+
+/// Un fallo de red con túnel suele ser del bastión, no del API server: si `ssh`
+/// lo dijo, se cuenta en la pista.
+fn explain_tunnel_error(mut error: OculusError, tunnel: &Tunnel) -> OculusError {
+    if error.code != ErrorCode::Unreachable {
+        return error;
+    }
+    let hint = if tunnel.stderr_contains("administratively prohibited") {
+        "El bastión no permite reenvío de puertos (AllowTcpForwarding).".to_owned()
+    } else if let Some(line) = tunnel.stderr_line("open failed") {
+        format!("El bastión «{}» no pudo llegar al API server. ssh: {line}", tunnel.host)
+    } else {
+        return error;
+    };
+    error = error.with_hint(hint);
+    error
 }
 
 #[cfg(test)]

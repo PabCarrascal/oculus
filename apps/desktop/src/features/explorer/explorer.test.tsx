@@ -7,11 +7,12 @@ import { mockBackend, renderApp, teardown } from "../../test/backend";
 const cluster: ClusterSummary = {
   id: "c1",
   contextName: "kind-oculus-it",
+  hasProxyUrl: false,
   sourceId: "s1",
   server: null,
   defaultNamespace: null,
-  prefs: { alias: null, color: null, readOnly: false, protected: false },
-  status: { state: "connected", serverVersion: "v1.37.0", degraded: false },
+  prefs: { alias: null, color: null, readOnly: false, protected: false, sshTunnel: null },
+  status: { state: "connected", serverVersion: "v1.37.0", degraded: false, tunnel: null },
 };
 
 const kind = (k: string, plural: string, group = "", namespaced = true): ResourceKind => ({

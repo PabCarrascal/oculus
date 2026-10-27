@@ -9,14 +9,15 @@ use kube::config::KubeConfigOptions;
 use kube::{Client, Config};
 use oculus_protocol::{
     ClusterPrefs, ClusterSummary, ErrorCode, KindRef, KubeconfigSource, ObjectRef, OculusError,
-    ResourceDetail, ResourceKind, Scope, SourceOrigin, UpdateResult,
+    ResourceDetail, ResourceKind, Scope, SourceOrigin, SshHostInfo, UpdateResult,
 };
 use oculus_watch::{Subscriber, SubscriptionId};
 use tokio::sync::OnceCell;
 
-use crate::cluster::{self, ClusterManager, StatusSink, Timeouts, errors, exec};
+use crate::cluster::{self, ClusterManager, StatusSink, Timeouts, TunnelRequest, errors, exec};
 use crate::kubeconfig::{Catalog, SourceSpec, discover_sources};
 use crate::shell_env::{ShellEnv, effective_path};
+use crate::tunnel::{self, SshLauncher, TunnelManager, TunnelTimeouts};
 use crate::workspace::WorkspaceStore;
 
 pub struct ClusterService {
@@ -26,16 +27,26 @@ pub struct ClusterService {
     home: Option<PathBuf>,
     /// En tests se fija `KUBECONFIG` para no leer el entorno real del usuario.
     fixed_kubeconfig_env: Option<Option<OsString>>,
+    /// Opciones extra para `ssh` (los tests pasan `-F` para no leer `~/.ssh`).
+    ssh_extra_args: Vec<String>,
 }
 
 impl ClusterService {
     pub fn new(workspace_path: impl Into<PathBuf>, sink: StatusSink) -> Self {
+        let workspace_path = workspace_path.into();
+        // Junto al workspace, los pids de los túneles: si la app se colgó, se
+        // cierran ahora los `ssh` que quedaron vivos.
+        let tunnels = TunnelManager::new(
+            Some(workspace_path.with_file_name("tunnels.json")),
+            TunnelTimeouts::default(),
+        );
         Self {
             workspace: WorkspaceStore::load(workspace_path),
-            manager: ClusterManager::new(sink, Timeouts::default()),
+            manager: ClusterManager::new(sink, Timeouts::default()).with_tunnels(tunnels),
             shell: Arc::default(),
             home: dirs::home_dir(),
             fixed_kubeconfig_env: None,
+            ssh_extra_args: Vec::new(),
         }
     }
 
@@ -53,7 +64,40 @@ impl ClusterService {
             shell: Arc::new(OnceCell::new_with(Some(shell))),
             home,
             fixed_kubeconfig_env: Some(kubeconfig_env),
+            ssh_extra_args: Vec::new(),
         }
+    }
+
+    #[doc(hidden)]
+    pub fn with_ssh_args(mut self, args: Vec<String>) -> Self {
+        self.ssh_extra_args = args;
+        self
+    }
+
+    /// `ssh` con el PATH efectivo y el entorno de la shell de login.
+    fn ssh_launcher(
+        &self,
+        extra_path: Vec<String>,
+    ) -> impl std::future::Future<Output = Result<SshLauncher, OculusError>> + Send + 'static {
+        let shell = self.shell.clone();
+        let extra_args = self.ssh_extra_args.clone();
+        async move {
+            let env = shell.get_or_init(ShellEnv::capture).await;
+            let mut launcher = SshLauncher::resolve(&effective_path(&extra_path, env), env)?;
+            launcher.extra_args = extra_args;
+            Ok(launcher)
+        }
+    }
+
+    /// Lo que `ssh` entiende de ese host, sin conectar (para el diálogo de preferencias).
+    pub async fn ssh_check(&self, host: &str, extra_path: Vec<String>) -> Result<SshHostInfo, OculusError> {
+        let launcher = self.ssh_launcher(extra_path).await?;
+        tunnel::check_host(&launcher, host).await
+    }
+
+    /// Cierra todas las sesiones y los túneles. Al salir de la app.
+    pub fn shutdown(&self) {
+        self.manager.shutdown();
     }
 
     /// Lee el entorno de la shell de login. Se lanza al arrancar en segundo
@@ -103,6 +147,7 @@ impl ClusterService {
                 source_id: ctx.source_id,
                 server: ctx.server,
                 default_namespace: ctx.default_namespace,
+                has_proxy_url: ctx.has_proxy_url,
             })
             .collect()
     }
@@ -146,21 +191,31 @@ impl ClusterService {
         })?;
         let default_namespace = entry.default_namespace.clone().unwrap_or_else(|| "default".to_owned());
         let (kubeconfig, context) = catalog.kubeconfig_for(id).expect("el contexto existe en el catálogo");
+        let tunnel = self.workspace.prefs(id).ssh_tunnel.map(|t| TunnelRequest {
+            host: t.host,
+            launcher: Box::pin(self.ssh_launcher(extra_path.clone())),
+        });
 
         let shell = self.shell.clone();
         let timeouts = self.manager.timeouts();
-        let prepare = async move {
+        let prepare = move |proxy: Option<http::Uri>| async move {
             let env = shell.get_or_init(ShellEnv::capture).await;
             let path = effective_path(&extra_path, env);
             let mut kubeconfig = kubeconfig;
             exec::prepare_exec(&mut kubeconfig, &context, &path, env)?;
             let options = KubeConfigOptions { context: Some(context), ..Default::default() };
-            let config = Config::from_custom_kubeconfig(kubeconfig, &options).await.map_err(|e| {
+            let mut config = Config::from_custom_kubeconfig(kubeconfig, &options).await.map_err(|e| {
                 OculusError::invalid(format!("kubeconfig no válido: {}", errors::scrub(&e.to_string())))
             })?;
+            if let Some(proxy) = proxy {
+                if config.proxy_url.is_some() {
+                    tracing::warn!("el túnel SSH sustituye al proxy-url del kubeconfig");
+                }
+                config.proxy_url = Some(proxy);
+            }
             Client::try_from(cluster::configure(config, &timeouts)).map_err(|e| errors::from_kube(&e))
         };
-        self.manager.connect(id.to_owned(), default_namespace, prepare);
+        self.manager.connect_with(id.to_owned(), default_namespace, tunnel, prepare);
         Ok(())
     }
 

@@ -121,7 +121,10 @@ async fn conecta_pasando_por_todos_los_pasos() {
     manager.connect("c1".into(), "default".into(), async { Ok(fake_client(Fake::Healthy)) });
 
     let status = wait_for(&manager, "c1", is_final).await;
-    assert_eq!(status, ClusterStatus::Connected { server_version: "v1.32.0".into(), degraded: false });
+    assert_eq!(
+        status,
+        ClusterStatus::Connected { server_version: "v1.32.0".into(), degraded: false, tunnel: None }
+    );
     assert_eq!(
         *log.lock().unwrap(),
         vec![
