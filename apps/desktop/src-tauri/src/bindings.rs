@@ -10,6 +10,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             commands::app::app_info,
             commands::app::startup_report,
+            commands::app::ui_log,
             commands::settings::settings_get,
             commands::settings::settings_set,
             commands::clusters::kubeconfig_list_sources,
@@ -24,6 +25,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::resources::resources_subscribe,
             commands::resources::resources_unsubscribe,
             commands::resources::resources_reset,
+            commands::detail::resource_get,
+            commands::detail::resource_update,
+            commands::detail::secret_reveal,
+            commands::detail::openapi_schema,
         ])
         .events(collect_events![events::ClusterStatusChanged, events::KubeconfigChanged])
 }

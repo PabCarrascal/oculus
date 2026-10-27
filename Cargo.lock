@@ -2733,6 +2733,8 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "http-body-util",
+ "json-patch",
  "k8s-openapi",
  "kube",
  "notify",

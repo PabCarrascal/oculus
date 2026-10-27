@@ -48,13 +48,15 @@ Cada etapa termina con un **hito verificable**: se demuestra en una demo y se mi
 
 Pendiente: la memoria del webview real (WKWebView) y los fps dentro de la app, porque la UI se midió en Chrome con el backend simulado. En modo desarrollo de React los fps bajan visiblemente (p95 de 25 ms), así que las medidas de rendimiento deben hacerse siempre con la build de producción (`preview:perf`).
 
-## Etapa 3 · Detalle y YAML
+## Etapa 3 · Detalle y YAML ✅
 
 - Panel de detalle con resumen por tipo, eventos y relacionados.
 - Editor Monaco con carga diferida, esquemas de `/openapi/v3`, dry-run, apply, diff y aviso de conflicto si el objeto cambió.
 - Secrets: valores ocultos y `secret_reveal` explícito.
 
 **Hito:** editar y aplicar un Deployment; un error de validación marca la línea correcta; un conflicto (409) ofrece ver diferencias. La primera apertura del editor tarda **< 800 ms** y no afecta al arranque (medido).
+
+**Resultado (2026-10-27, contra kind):** editar y aplicar un Deployment funciona, también en pleno escalado (con PUT daba conflicto; ver 03). Un campo desconocido (`spec.replicass`) y un valor inválido (`spec.replicas: -1`) vuelven con su ruta exacta y se marcan en su línea. Un cambio ajeno en el mismo campo da conflicto con diferencias y "sobrescribir". Primera apertura del editor: 323 ms en la build de producción (Monaco 0.52 y monaco-yaml, unos 3,5 MB en bloques aparte que no se descargan hasta abrir la pestaña). Arranque: ~400 ms. Mientras se escribe, el esquema real de `apps/v1` marca tipos incorrectos en su línea, también a varios `$ref` de profundidad (`replicas: tres`, `containerPort: "80"`). En la app real hubo que ajustar la CSP de Tauri (estilos y workers) y bajar a Monaco 0.52, porque el validador no arrancaba (ver D6 en 01). Con eso, la app real carga el esquema y el log queda sin errores de workers ni de esquema.
 
 ## Etapa 4 · Operaciones
 

@@ -3,6 +3,7 @@
 pub mod cluster;
 pub mod kubeconfig;
 pub mod persist;
+pub mod resources;
 pub mod service;
 pub mod settings;
 pub mod shell_env;

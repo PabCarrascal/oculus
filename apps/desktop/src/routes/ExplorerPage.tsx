@@ -1,4 +1,4 @@
-import type { KindRef, ResourceKind, Scope } from "@oculus/bindings";
+import type { KindRef, ObjectRef, ResourceKind, Scope } from "@oculus/bindings";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ClusterActions } from "../features/clusters/ClusterActions";
 import { ErrorNotice } from "../features/clusters/ErrorNotice";
 import { displayName } from "../features/clusters/naming";
+import { DetailPanel } from "../features/detail/DetailPanel";
 import { ColumnMenu } from "../features/explorer/ColumnMenu";
 import { KindSidebar } from "../features/explorer/KindSidebar";
 import { NamespacePicker } from "../features/explorer/NamespacePicker";
@@ -23,6 +24,8 @@ export interface ExplorerSearch {
   kind?: string;
   ns?: string;
   q?: string;
+  /** Objeto abierto en el detalle: "namespace/nombre" ("/nombre" si no tiene namespace). */
+  sel?: string;
 }
 
 export function ExplorerPage() {
@@ -74,6 +77,18 @@ export function ExplorerPage() {
     () => sortRows(filterRows(view.rows, parseQuery(deferredQuery)), sort, view.columns),
     [view.rows, deferredQuery, sort, view.columns],
   );
+
+  // Objeto abierto en el detalle y su fila en la tabla (para saber si cambió).
+  const [selNs, selName] = search.sel
+    ? [search.sel.slice(0, search.sel.indexOf("/")), search.sel.slice(search.sel.indexOf("/") + 1)]
+    : ["", ""];
+  const target: ObjectRef | null =
+    kind && search.sel
+      ? { ...kind, namespace: resource?.namespaced ? selNs || null : null, name: selName }
+      : null;
+  const openRow = target
+    ? view.rows.find((r) => r.name === target.name && (r.namespace ?? null) === target.namespace)
+    : undefined;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: la selección es de un tipo y ámbito concretos.
   useEffect(() => setSelected(new Set()), [key, search.ns]);
@@ -180,14 +195,40 @@ export function ExplorerPage() {
               : t("explorer.noMatches")}
           </p>
         ) : (
-          <ResourceTable
-            columns={columns}
-            rows={rows}
-            sort={sort}
-            onSort={(s) => setSort(key, s)}
-            selected={selected}
-            onSelect={setSelected}
-          />
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <ResourceTable
+                columns={columns}
+                rows={rows}
+                sort={sort}
+                onSort={(s) => setSort(key, s)}
+                selected={selected}
+                onSelect={setSelected}
+                activeUid={openRow?.uid}
+                onOpen={(row) => update({ sel: `${row.namespace ?? ""}/${row.name}` })}
+              />
+            </div>
+            {target && (
+              <DetailPanel
+                key={`${key}/${search.sel}`}
+                clusterId={clusterId}
+                target={target}
+                rowVersion={openRow}
+                onClose={() => update({ sel: undefined })}
+                onNavigate={(t) =>
+                  update({
+                    kind: kindKey(t),
+                    sel: `${t.namespace ?? ""}/${t.name}`,
+                    // Si el destino queda fuera de los namespaces elegidos, se quita el filtro.
+                    ns:
+                      t.namespace && selectedNs.length > 0 && !selectedNs.includes(t.namespace)
+                        ? undefined
+                        : search.ns,
+                  })
+                }
+              />
+            )}
+          </div>
         )}
       </section>
     </div>

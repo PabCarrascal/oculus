@@ -10,6 +10,8 @@ publish.workspace = true
 dirs.workspace = true
 futures.workspace = true
 hex.workspace = true
+http.workspace = true
+json-patch.workspace = true
 k8s-openapi.workspace = true
 kube.workspace = true
 notify.workspace = true
@@ -24,7 +26,7 @@ tracing.workspace = true
 which.workspace = true
 
 [dev-dependencies]
-http.workspace = true
+http-body-util.workspace = true
 tempfile.workspace = true
 tower-test.workspace = true
 

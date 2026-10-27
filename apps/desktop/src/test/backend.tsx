@@ -1,9 +1,11 @@
 import type {
   ClusterSummary,
   KubeconfigSource,
+  ResourceDetail,
   ResourceEvent,
   ResourceKind,
   Settings,
+  UpdateResult,
 } from "@oculus/bindings";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
@@ -31,6 +33,16 @@ export interface BackendState {
   namespaces: string[];
   /** Channels de las suscripciones abiertas, por id. */
   channels: Map<string, ChannelLike>;
+  /** Detalle por nombre de objeto. */
+  details: Record<string, ResourceDetail>;
+  /** Respuesta de resource_update: el resultado o el error que lanza. */
+  update: (args: {
+    baseJson: string;
+    editedJson: string;
+    dryRun: boolean;
+    force: boolean;
+  }) => UpdateResult;
+  secrets: Record<string, string>;
 }
 
 /** Simula el backend: guarda estado y registra cada llamada IPC. */
@@ -42,6 +54,9 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
     kinds: [],
     namespaces: [],
     channels: new Map(),
+    details: {},
+    update: ({ editedJson }) => ({ resourceVersion: "2", objectJson: editedJson }),
+    secrets: {},
     ...initial,
   };
   const calls: { cmd: string; args: unknown }[] = [];
@@ -88,6 +103,17 @@ export function mockBackend(initial: Partial<BackendState> = {}) {
         state.channels.delete(a.subscriptionId as string);
         return null;
       case "resources_reset":
+        return null;
+      case "resource_get": {
+        const d = state.details[(a.target as { name: string }).name];
+        if (!d) throw { code: "NotFound", message: "no existe", details: null };
+        return d;
+      }
+      case "resource_update":
+        return state.update(a as never);
+      case "secret_reveal":
+        return state.secrets[a.key as string] ?? "";
+      case "openapi_schema":
         return null;
     }
     return null;

@@ -4,7 +4,7 @@
 use std::error::Error as _;
 
 use kube::client::AuthError;
-use oculus_protocol::{ErrorCode, ErrorDetails, OculusError};
+use oculus_protocol::{ErrorCode, ErrorDetails, FieldCause, OculusError};
 
 const MAX_DETAIL: usize = 300;
 
@@ -15,27 +15,91 @@ pub fn from_kube(err: &kube::Error) -> OculusError {
         return auth_error(auth);
     }
     match err {
-        kube::Error::Api(status) => {
-            let code = match status.code {
-                401 => ErrorCode::Unauthorized,
-                403 => ErrorCode::Forbidden,
-                404 => ErrorCode::NotFound,
-                409 => ErrorCode::Conflict,
-                422 => ErrorCode::Invalid,
-                _ => ErrorCode::Internal,
-            };
-            let mut e = OculusError::new(code, status.message.clone());
-            e.details = Some(ErrorDetails { status: Some(status.code), hint: None });
-            if code == ErrorCode::Unauthorized {
-                e = e.with_hint("Las credenciales han caducado o no son válidas. Vuelve a iniciar sesión con la herramienta del proveedor (aws sso login, az login…).");
-            }
-            e
-        }
+        kube::Error::Api(status) => api_error(status),
         kube::Error::InferKubeconfig(_) => OculusError::new(ErrorCode::Invalid, chain(err)),
         kube::Error::RustlsTls(_) => tls(chain(err)),
         kube::Error::HyperError(_) | kube::Error::Service(_) => network(chain(err)),
         _ => OculusError::internal(chain(err)),
     }
+}
+
+fn api_error(status: &kube::core::Status) -> OculusError {
+    let code = match status.code {
+        // 400: la validación estricta (campos desconocidos o duplicados) llega así.
+        400 | 422 => ErrorCode::Invalid,
+        401 => ErrorCode::Unauthorized,
+        403 => ErrorCode::Forbidden,
+        404 => ErrorCode::NotFound,
+        409 => ErrorCode::Conflict,
+        _ => ErrorCode::Internal,
+    };
+    let mut causes: Vec<FieldCause> = status
+        .details
+        .as_ref()
+        .map(|d| {
+            d.causes
+                .iter()
+                .map(|c| FieldCause {
+                    field: Some(c.field.clone()).filter(|f| !f.is_empty()),
+                    message: if c.message.is_empty() { c.reason.clone() } else { c.message.clone() },
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // La validación estricta llega como 400 (PUT) o como 422 con una causa en el
+    // campo "patch" (PATCH), y en este caso el mensaje incluye el objeto entero.
+    // Se sacan las rutas reales y se descarta el volcado.
+    let mut message = status.message.clone();
+    if let Some(i) = message.find("strict decoding error:") {
+        causes = strict_causes(&message[i..]);
+        message = message[i..].to_owned();
+    }
+    let message = truncate(&message, MAX_MESSAGE);
+    for cause in &mut causes {
+        cause.message = truncate(&cause.message, MAX_MESSAGE);
+    }
+    let hint = match code {
+        ErrorCode::Unauthorized => Some(
+            "Las credenciales han caducado o no son válidas. Vuelve a iniciar sesión con la herramienta del proveedor (aws sso login, az login…).",
+        ),
+        ErrorCode::Conflict => Some(
+            "El objeto cambió en el clúster mientras lo editabas. Mira las diferencias y decide si recargar o sobrescribir.",
+        ),
+        _ => None,
+    };
+    OculusError {
+        code,
+        message,
+        details: Some(ErrorDetails { status: Some(status.code), hint: hint.map(str::to_owned), causes }),
+    }
+}
+
+const MAX_MESSAGE: usize = 500;
+
+/// Los mensajes del API server pueden traer el objeto entero: se recortan.
+fn truncate(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    text.chars().take(max).collect::<String>() + "…"
+}
+
+/// `strict decoding error: unknown field "spec.replicass", duplicate field "spec.x"`
+fn strict_causes(message: &str) -> Vec<FieldCause> {
+    let mut causes = Vec::new();
+    for (kind, label) in
+        [("unknown field \"", "campo desconocido"), ("duplicate field \"", "campo duplicado")]
+    {
+        let mut rest = message;
+        while let Some(i) = rest.find(kind) {
+            let after = &rest[i + kind.len()..];
+            let Some(end) = after.find('"') else { break };
+            let field = after[..end].to_owned();
+            causes.push(FieldCause { message: format!("{label}: {field}"), field: Some(field) });
+            rest = &after[end..];
+        }
+    }
+    causes
 }
 
 pub fn timeout(what: &str, secs: u64) -> OculusError {
@@ -156,6 +220,71 @@ mod tests {
 
     fn api(code: u16) -> kube::Error {
         kube::Error::Api(Box::new(Status::failure("mensaje del servidor", "Razón").with_code(code)))
+    }
+
+    #[test]
+    fn la_validacion_estricta_y_los_422_traen_causas_por_campo() {
+        let strict = Status::failure(
+            r#"Deployment in version "v1" cannot be handled as a Deployment: strict decoding error: unknown field "spec.replicass", duplicate field "metadata.name""#,
+            "BadRequest",
+        )
+        .with_code(400);
+        let e = from_kube(&kube::Error::Api(Box::new(strict)));
+        assert_eq!(e.code, ErrorCode::Invalid);
+        let fields: Vec<_> = e.details.unwrap().causes.into_iter().map(|c| c.field.unwrap()).collect();
+        assert_eq!(fields, ["spec.replicass", "metadata.name"]);
+
+        let mut invalid = Status::failure("Deployment.apps \"web\" is invalid", "Invalid").with_code(422);
+        invalid.details = Some(kube::core::response::StatusDetails {
+            name: "web".into(),
+            group: "apps".into(),
+            kind: "Deployment".into(),
+            uid: String::new(),
+            retry_after_seconds: 0,
+            causes: vec![kube::core::response::StatusCause {
+                reason: "FieldValueInvalid".into(),
+                message: "Invalid value: -1: must be greater than or equal to 0".into(),
+                field: "spec.replicas".into(),
+            }],
+        });
+        let e = from_kube(&kube::Error::Api(Box::new(invalid)));
+        let cause = &e.details.unwrap().causes[0];
+        assert_eq!(cause.field.as_deref(), Some("spec.replicas"));
+        assert!(cause.message.contains("greater than or equal"));
+    }
+
+    #[test]
+    fn el_campo_desconocido_de_un_patch_no_vuelca_el_objeto() {
+        let huge = format!(
+            r#" "" is invalid: patch: Invalid value: "{{\"spec\":{{{}}}}}": strict decoding error: unknown field "spec.replicass""#,
+            "\"x\":1,".repeat(2000)
+        );
+        let mut status = Status::failure(&huge, "Invalid").with_code(422);
+        status.details = Some(kube::core::response::StatusDetails {
+            name: String::new(),
+            group: String::new(),
+            kind: String::new(),
+            uid: String::new(),
+            retry_after_seconds: 0,
+            causes: vec![kube::core::response::StatusCause {
+                reason: "FieldValueInvalid".into(),
+                message: huge.clone(),
+                field: "patch".into(),
+            }],
+        });
+        let e = from_kube(&kube::Error::Api(Box::new(status)));
+        assert_eq!(e.code, ErrorCode::Invalid);
+        assert_eq!(e.message, r#"strict decoding error: unknown field "spec.replicass""#);
+        let causes = e.details.unwrap().causes;
+        assert_eq!(causes.len(), 1);
+        assert_eq!(causes[0].field.as_deref(), Some("spec.replicass"));
+    }
+
+    #[test]
+    fn un_409_explica_el_conflicto() {
+        let e = from_kube(&api(409));
+        assert_eq!(e.code, ErrorCode::Conflict);
+        assert!(e.details.unwrap().hint.unwrap().contains("diferencias"));
     }
 
     #[test]

@@ -111,3 +111,125 @@ contexts: [{ name: blackhole, context: { cluster: c, user: u } }]
     assert_eq!(error.code, ErrorCode::Unreachable);
     assert!(elapsed < Duration::from_secs(10), "hito: error claro en < 10 s");
 }
+
+/// Detalle y edición contra el clúster de `setup.sh` (namespace demo).
+#[tokio::test]
+#[ignore = "necesita el clúster de tests/fixtures/kind/setup.sh: OCULUS_IT_KUBECONFIG"]
+async fn detalle_edicion_y_secret_contra_un_cluster_real() {
+    use oculus_protocol::{ObjectRef, Relation};
+
+    let kubeconfig = std::env::var_os("OCULUS_IT_KUBECONFIG").expect("define OCULUS_IT_KUBECONFIG");
+    let (_dir, svc, _log) = service(kubeconfig);
+    let id = svc.list_clusters()[0].id.clone();
+    svc.connect(&id, vec![]).unwrap();
+    let status = wait_final(&svc, &id, Duration::from_secs(60)).await;
+    assert!(matches!(status, ClusterStatus::Connected { .. }), "{status:?}");
+
+    let web = ObjectRef {
+        group: "apps".into(),
+        version: "v1".into(),
+        plural: "deployments".into(),
+        namespace: Some("demo".into()),
+        name: "web".into(),
+    };
+    let started = Instant::now();
+    let d = svc.detail(&id, &web).await.unwrap();
+    println!(
+        "detalle de web en {} ms: {} eventos, {} relacionados",
+        started.elapsed().as_millis(),
+        d.events.len(),
+        d.related.len()
+    );
+    assert!(d.editable);
+    assert!(!d.object_json.contains("managedFields"));
+    assert!(d.related.iter().any(|r| r.relation == Relation::Selects && r.kind == "Pod"), "{:?}", d.related);
+
+    // Dry-run de un cambio válido: no escribe. Siempre un valor distinto del
+    // actual, para que el test no dependa de ejecuciones previas.
+    let base: serde_json::Value = serde_json::from_str(&d.object_json).unwrap();
+    let original = base["spec"]["replicas"].as_i64().unwrap_or(3);
+    let mut edited = base.clone();
+    edited["spec"]["replicas"] = serde_json::json!(original + 1);
+    let (b, e) = (base.to_string(), edited.to_string());
+    let ok = svc.update(&id, &web, &b, &e, true, false).await.unwrap();
+    assert!(ok.object_json.contains(&format!("\"replicas\":{}", original + 1)));
+    assert_eq!(
+        svc.detail(&id, &web).await.unwrap().resource_version,
+        d.resource_version,
+        "un dry-run no escribe"
+    );
+
+    // Campo desconocido: error con la ruta exacta para marcar la línea.
+    let mut bad = edited.clone();
+    bad["spec"]["replicass"] = serde_json::json!(3);
+    let err = svc.update(&id, &web, &b, &bad.to_string(), true, false).await.unwrap_err();
+    let fields: Vec<_> =
+        err.details.as_ref().unwrap().causes.iter().filter_map(|c| c.field.clone()).collect();
+    println!("campo desconocido → {:?} {:?}", err.code, fields);
+    assert!(fields.iter().any(|f| f == "spec.replicass"), "{fields:?}");
+
+    // Valor inválido (422): causa con ruta.
+    let mut invalid = base.clone();
+    invalid["spec"]["replicas"] = serde_json::json!(-1);
+    let err = svc.update(&id, &web, &b, &invalid.to_string(), true, false).await.unwrap_err();
+    let fields: Vec<_> =
+        err.details.as_ref().unwrap().causes.iter().filter_map(|c| c.field.clone()).collect();
+    println!("réplicas negativas → {:?} {:?}", err.code, fields);
+    assert!(fields.iter().any(|f| f == "spec.replicas"), "{fields:?}");
+
+    // Aplicar de verdad y, en pleno escalado (el controlador reescribe el
+    // estado sin parar), restaurar desde la misma base sin releer: con PUT y
+    // resourceVersion esto daba 409; con el parche por campos debe funcionar.
+    svc.update(&id, &web, &b, &e, false, false).await.unwrap();
+    let restored = svc.update(&id, &web, &e, &b, false, false).await;
+    println!(
+        "restaurar durante el escalado sin releer → {:?}",
+        restored.as_ref().map(|_| "ok").map_err(|e| e.code)
+    );
+    restored.unwrap();
+
+    // Conflicto real: alguien cambia las réplicas por fuera; mi edición, basada
+    // en el valor anterior, debe rechazarse y "sobrescribir" debe aplicarla.
+    let mut theirs = base.clone();
+    theirs["spec"]["replicas"] = serde_json::json!(original + 2);
+    svc.update(&id, &web, &b, &theirs.to_string(), false, true).await.unwrap();
+    let err = svc.update(&id, &web, &b, &e, false, false).await.unwrap_err();
+    println!("edición sobre un campo que otro cambió → {:?}", err.code);
+    assert_eq!(err.code, oculus_protocol::ErrorCode::Conflict);
+    svc.update(&id, &web, &b, &e, false, true).await.unwrap();
+    let now: serde_json::Value =
+        serde_json::from_str(&svc.detail(&id, &web).await.unwrap().object_json).unwrap();
+    assert_eq!(now["spec"]["replicas"].as_i64(), Some(original + 1), "sobrescribir aplica mi valor");
+    // Se deja como estaba.
+    svc.update(&id, &web, &e, &b, false, true).await.unwrap();
+
+    // Secret: sin valores en el detalle, uno a uno bajo petición.
+    let secret = ObjectRef {
+        group: String::new(),
+        version: "v1".into(),
+        plural: "secrets".into(),
+        namespace: Some("demo".into()),
+        name: "credenciales".into(),
+    };
+    let s = svc.detail(&id, &secret).await.unwrap();
+    assert!(!s.editable);
+    assert_eq!(s.secret_keys.as_deref(), Some(&["token".to_owned()][..]));
+    assert!(!s.object_json.contains("bm8tZXMtcmVhbA"), "el valor en base64 no sale");
+    assert_eq!(svc.reveal_secret(&id, &secret, "token").await.unwrap(), "no-es-real");
+
+    // Esquemas: nativo y de CRD.
+    let started = Instant::now();
+    let schema = svc.schema(&id, "apps", "v1", "Deployment").await.unwrap().expect("esquema de Deployment");
+    println!(
+        "esquema apps/v1 Deployment: {} KB en {} ms",
+        schema.len() / 1024,
+        started.elapsed().as_millis()
+    );
+    let doc: serde_json::Value = serde_json::from_str(&schema).unwrap();
+    assert!(doc.pointer("/properties/spec").is_some(), "el tipo va en la raíz");
+    assert!(doc.pointer("/components/schemas/io.k8s.api.apps.v1.DeploymentSpec").is_some());
+    let started = Instant::now();
+    svc.schema(&id, "apps", "v1", "Deployment").await.unwrap();
+    println!("  (segunda vez, de caché: {} ms)", started.elapsed().as_millis());
+    assert!(svc.schema(&id, "demo.oculus.test", "v1", "Gadget").await.unwrap().is_some());
+}

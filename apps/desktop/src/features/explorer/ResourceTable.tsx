@@ -16,10 +16,22 @@ interface Props {
   onSort: (sort: Sort) => void;
   selected: Set<string>;
   onSelect: (selected: Set<string>) => void;
+  /** Fila abierta en el panel de detalle. */
+  activeUid?: string;
+  onOpen: (row: Row) => void;
 }
 
 /** Tabla virtualizada: solo existen en el DOM las filas visibles (D4). */
-export function ResourceTable({ columns, rows, sort, onSort, selected, onSelect }: Props) {
+export function ResourceTable({
+  columns,
+  rows,
+  sort,
+  onSort,
+  selected,
+  onSelect,
+  activeUid,
+  onOpen,
+}: Props) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const now = useNow();
@@ -104,7 +116,11 @@ export function ResourceTable({ columns, rows, sort, onSort, selected, onSelect 
                 aria-selected={isSelected}
                 className={cn(
                   "absolute left-0 grid w-full items-center border-b border-border/60 text-sm",
-                  isSelected ? "bg-accent/10" : "hover:bg-surface-2",
+                  row.uid === activeUid
+                    ? "bg-accent/15"
+                    : isSelected
+                      ? "bg-accent/10"
+                      : "hover:bg-surface-2",
                 )}
                 style={{
                   height: ROW_HEIGHT,
@@ -128,7 +144,7 @@ export function ResourceTable({ columns, rows, sort, onSort, selected, onSelect 
                       c.type === "number" && "text-right tabular-nums",
                     )}
                   >
-                    <Cell row={row} column={c} now={now} />
+                    <Cell row={row} column={c} now={now} onOpen={onOpen} />
                   </td>
                 ))}
               </tr>
@@ -140,10 +156,28 @@ export function ResourceTable({ columns, rows, sort, onSort, selected, onSelect 
   );
 }
 
-function Cell({ row, column, now }: { row: Row; column: ColumnDef; now: number }) {
+function Cell({
+  row,
+  column,
+  now,
+  onOpen,
+}: {
+  row: Row;
+  column: ColumnDef;
+  now: number;
+  onOpen: (row: Row) => void;
+}) {
   switch (column.id) {
     case "name":
-      return <span className="font-medium text-text">{row.name}</span>;
+      return (
+        <button
+          type="button"
+          onClick={() => onOpen(row)}
+          className="max-w-full truncate text-left font-medium text-text hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+        >
+          {row.name}
+        </button>
+      );
     case "namespace":
       return <span className="text-muted">{row.namespace}</span>;
     case "status":

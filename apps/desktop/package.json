@@ -21,10 +21,13 @@
     "@tauri-apps/api": "2.12.4",
     "cmdk": "1.1.1",
     "lucide-react": "1.61.0",
+    "monaco-editor": "0.52.2",
+    "monaco-yaml": "5.5.1",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-i18next": "17.1.5",
+    "yaml": "2.9.1",
     "zustand": "5.0.16"
   },
   "devDependencies": {

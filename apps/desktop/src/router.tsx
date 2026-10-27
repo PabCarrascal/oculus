@@ -28,6 +28,7 @@ const explorerRoute = createRoute({
     kind: typeof search.kind === "string" ? search.kind : undefined,
     ns: typeof search.ns === "string" ? search.ns : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
+    sel: typeof search.sel === "string" ? search.sel : undefined,
   }),
 });
 

@@ -28,6 +28,17 @@ pub enum ErrorCode {
 pub struct ErrorDetails {
     pub status: Option<u16>,
     pub hint: Option<String>,
+    /// Campos concretos que fallan (validación del API server), para marcar líneas.
+    #[serde(default)]
+    pub causes: Vec<FieldCause>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldCause {
+    /// Ruta como la da Kubernetes: `spec.template.spec.containers[0].image`.
+    pub field: Option<String>,
+    pub message: String,
 }
 
 impl OculusError {
@@ -62,7 +73,7 @@ mod tests {
             serde_json::json!({
                 "code": "Invalid",
                 "message": "valor fuera de rango",
-                "details": { "status": null, "hint": "usa 0–600" }
+                "details": { "status": null, "hint": "usa 0–600", "causes": [] }
             })
         );
     }

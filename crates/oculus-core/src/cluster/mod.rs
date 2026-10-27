@@ -51,6 +51,8 @@ pub struct ClusterSession {
     pub default_namespace: String,
     /// Watchers de esta sesión; se cierran al desconectar.
     pub watches: WatchManager,
+    /// Esquemas OpenAPI v3 por "apis/grupo/versión", para el editor.
+    pub schemas: tokio::sync::Mutex<HashMap<String, Arc<serde_json::Value>>>,
 }
 
 impl ClusterSession {
@@ -208,7 +210,14 @@ impl ClusterManager {
 
         let source = Arc::new(KubeSource { client: client.clone() });
         let watches = WatchManager::new(source, WatchOptions::default(), errors::from_kube);
-        Ok(ClusterSession { client, server_version: version.git_version, kinds, default_namespace, watches })
+        Ok(ClusterSession {
+            client,
+            server_version: version.git_version,
+            kinds,
+            default_namespace,
+            watches,
+            schemas: Default::default(),
+        })
     }
 
     pub fn disconnect(&self, id: &str) {

@@ -8,6 +8,11 @@ export const commands = {
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	/**  La UI lo llama tras su primera pintura con contenido. */
 	startupReport: () => __TAURI_INVOKE<StartupReport>("startup_report"),
+	/**
+	 *  Errores y avisos del webview, para que aparezcan en el mismo log que el backend
+	 *  (en release no hay consola de desarrollo).
+	 */
+	uiLog: (level: string, message: string) => __TAURI_INVOKE<void>("ui_log", { level, message }),
 	settingsGet: () => __TAURI_INVOKE<Settings_Serialize>("settings_get"),
 	/**  Asíncrono para que la escritura en disco no bloquee el hilo principal. */
 	settingsSet: (patch: SettingsPatch_Deserialize) => typedError<Settings_Serialize, OculusError_Serialize>(__TAURI_INVOKE("settings_set", { patch })),
@@ -29,6 +34,17 @@ export const commands = {
 	 *  webview (una recarga no avisa y sus Channels ya no tienen receptor).
 	 */
 	resourcesReset: () => typedError<null, OculusError_Serialize>(__TAURI_INVOKE("resources_reset")),
+	resourceGet: (clusterId: string, target: ObjectRef_Deserialize) => typedError<ResourceDetail_Serialize, OculusError_Serialize>(__TAURI_INVOKE("resource_get", { clusterId, target })),
+	/**
+	 *  Aplica los cambios del editor (JSON Patch entre `base_json` y `edited_json`).
+	 *  Con `dry_run` solo valida; con `force` sobrescribe aunque otro haya cambiado
+	 *  los mismos campos.
+	 */
+	resourceUpdate: (clusterId: string, target: ObjectRef_Deserialize, baseJson: string, editedJson: string, dryRun: boolean, force: boolean) => typedError<UpdateResult, OculusError_Serialize>(__TAURI_INVOKE("resource_update", { clusterId, target, baseJson, editedJson, dryRun, force })),
+	/**  Un valor de un Secret, solo cuando el usuario lo pide. */
+	secretReveal: (clusterId: string, target: ObjectRef_Deserialize, key: string) => typedError<string, OculusError_Serialize>(__TAURI_INVOKE("secret_reveal", { clusterId, target, key })),
+	/**  Esquema JSON del tipo para validar el editor; `None` si el clúster no lo publica. */
+	openapiSchema: (clusterId: string, group: string, version: string, kind: string) => typedError<string | null, OculusError_Serialize>(__TAURI_INVOKE("openapi_schema", { clusterId, group, version, kind })),
 };
 
 /** Events */
@@ -132,11 +148,51 @@ export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;
 export type ErrorDetails_Deserialize = {
 	status?: number | null,
 	hint?: string | null,
+	/**  Campos concretos que fallan (validación del API server), para marcar líneas. */
+	causes?: FieldCause_Deserialize[],
 };
 
 export type ErrorDetails_Serialize = {
 	status: number | null,
 	hint: string | null,
+	/**  Campos concretos que fallan (validación del API server), para marcar líneas. */
+	causes: FieldCause_Serialize[],
+};
+
+export type EventInfo = EventInfo_Serialize | EventInfo_Deserialize;
+
+export type EventInfo_Deserialize = {
+	type: string,
+	reason: string,
+	message: string,
+	count: number,
+	/**  ISO 8601. */
+	lastSeen?: string | null,
+	source?: string | null,
+};
+
+export type EventInfo_Serialize = {
+	type: string,
+	reason: string,
+	message: string,
+	count: number,
+	/**  ISO 8601. */
+	lastSeen: string | null,
+	source: string | null,
+};
+
+export type FieldCause = FieldCause_Serialize | FieldCause_Deserialize;
+
+export type FieldCause_Deserialize = {
+	/**  Ruta como la da Kubernetes: `spec.template.spec.containers[0].image`. */
+	field?: string | null,
+	message: string,
+};
+
+export type FieldCause_Serialize = {
+	/**  Ruta como la da Kubernetes: `spec.template.spec.containers[0].image`. */
+	field: string | null,
+	message: string,
 };
 
 /**  Identifica un tipo de recurso dentro de un clúster. */
@@ -173,6 +229,29 @@ export type KubeconfigSource_Serialize = {
 
 export type Locale = "es" | "en";
 
+/**  Un objeto concreto dentro de un clúster. */
+export type ObjectRef = ObjectRef_Serialize | ObjectRef_Deserialize;
+
+/**  Un objeto concreto dentro de un clúster. */
+export type ObjectRef_Deserialize = {
+	/**  Vacío para el grupo core. */
+	group: string,
+	version: string,
+	plural: string,
+	namespace?: string | null,
+	name: string,
+};
+
+/**  Un objeto concreto dentro de un clúster. */
+export type ObjectRef_Serialize = {
+	/**  Vacío para el grupo core. */
+	group: string,
+	version: string,
+	plural: string,
+	namespace: string | null,
+	name: string,
+};
+
 /**  Error único de todo el contrato IPC (docs/03-contrato-ipc.md). */
 export type OculusError = OculusError_Serialize | OculusError_Deserialize;
 
@@ -188,6 +267,69 @@ export type OculusError_Serialize = {
 	code: ErrorCode,
 	message: string,
 	details: ErrorDetails_Serialize | null,
+};
+
+export type RelatedRef = RelatedRef_Serialize | RelatedRef_Deserialize;
+
+export type RelatedRef_Deserialize = {
+	relation: Relation,
+	kind: string,
+	/**  `None` si el tipo no aparece en el discovery (no se puede enlazar). */
+	target?: ObjectRef_Deserialize | null,
+	name: string,
+};
+
+export type RelatedRef_Serialize = {
+	relation: Relation,
+	kind: string,
+	/**  `None` si el tipo no aparece en el discovery (no se puede enlazar). */
+	target: ObjectRef_Serialize | null,
+	name: string,
+};
+
+export type Relation = 
+/**  Este objeto pertenece a `target` (ownerReferences). */
+"owner" | 
+/**  `target` cumple el selector de este objeto (pods de un Deployment o Service). */
+"selects" | 
+/**  Nodo en el que corre el pod. */
+"node" | 
+/**  ConfigMap, Secret o PVC montado por el pod. */
+"mounts";
+
+/**  Lo que necesita el panel de detalle. El YAML lo genera la UI a partir del JSON. */
+export type ResourceDetail = ResourceDetail_Serialize | ResourceDetail_Deserialize;
+
+/**  Lo que necesita el panel de detalle. El YAML lo genera la UI a partir del JSON. */
+export type ResourceDetail_Deserialize = {
+	apiVersion: string,
+	kind: string,
+	uid: string,
+	resourceVersion: string,
+	/**  El objeto en JSON, sin `managedFields`. En un Secret, los valores van vacíos. */
+	objectJson: string,
+	events: EventInfo_Deserialize[],
+	related: RelatedRef_Deserialize[],
+	/**  Se puede editar el YAML (verbo update, clúster no en solo lectura, no es un Secret). */
+	editable: boolean,
+	/**  Claves de un Secret; sus valores solo llegan con `secret_reveal`. */
+	secretKeys?: string[] | null,
+};
+
+/**  Lo que necesita el panel de detalle. El YAML lo genera la UI a partir del JSON. */
+export type ResourceDetail_Serialize = {
+	apiVersion: string,
+	kind: string,
+	uid: string,
+	resourceVersion: string,
+	/**  El objeto en JSON, sin `managedFields`. En un Secret, los valores van vacíos. */
+	objectJson: string,
+	events: EventInfo_Serialize[],
+	related: RelatedRef_Serialize[],
+	/**  Se puede editar el YAML (verbo update, clúster no en solo lectura, no es un Secret). */
+	editable: boolean,
+	/**  Claves de un Secret; sus valores solo llegan con `secret_reveal`. */
+	secretKeys: string[] | null,
 };
 
 /**  Lo que llega por el Channel de una suscripción (docs/03-contrato-ipc.md). */
@@ -343,6 +485,11 @@ export type TelemetrySettings_Serialize = {
 export type Theme = "system" | "light" | "dark";
 
 export type Tone = "ok" | "warning" | "error" | "progress" | "neutral";
+
+export type UpdateResult = {
+	resourceVersion: string,
+	objectJson: string,
+};
 
 export type WatchState = "initializing" | "ready" | "relisting" | "backoff" | "error";
 

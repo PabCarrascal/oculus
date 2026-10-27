@@ -49,6 +49,7 @@ const clusters: ClusterSummary[] = [
         details: {
           status: null,
           hint: "Instálalo o añade su carpeta en Ajustes › Rutas extra para binarios.",
+          causes: [],
         },
       },
     },
@@ -252,6 +253,70 @@ function handle(cmd: string, args: unknown): unknown {
       subscriptions.delete(a.subscriptionId as string);
       return null;
     }
+    case "resource_get": {
+      // Un Pod sintético para desarrollar el detalle sin clúster.
+      const t = a.target as { name: string; namespace: string | null };
+      const pod = {
+        apiVersion: "v1",
+        kind: "Pod",
+        metadata: {
+          name: t.name,
+          namespace: t.namespace,
+          uid: `uid-${t.name}`,
+          resourceVersion: "1",
+          labels: { app: t.name.split("-").slice(0, 2).join("-") },
+        },
+        spec: {
+          nodeName: "node-1",
+          containers: [{ name: "app", image: "registry.example/app:1.4.2" }],
+        },
+        status: {
+          phase: "Running",
+          containerStatuses: [
+            { name: "app", ready: true, restartCount: 2, state: { running: {} } },
+          ],
+        },
+      };
+      return {
+        apiVersion: "v1",
+        kind: "Pod",
+        uid: `uid-${t.name}`,
+        resourceVersion: "1",
+        objectJson: JSON.stringify(pod),
+        events: [
+          {
+            type: "Normal",
+            reason: "Started",
+            message: "Started container app",
+            count: 1,
+            lastSeen: new Date().toISOString(),
+            source: "kubelet",
+          },
+        ],
+        related: [{ relation: "node", kind: "Node", name: "node-1", target: null }],
+        editable: true,
+        secretKeys: null,
+      };
+    }
+    case "resource_update":
+      return { resourceVersion: "2", objectJson: a.editedJson };
+    case "openapi_schema":
+      // Un esquema mínimo, para ver la validación del editor sin clúster.
+      return JSON.stringify({
+        type: "object",
+        properties: {
+          apiVersion: { type: "string" },
+          kind: { type: "string" },
+          metadata: { type: "object" },
+          spec: {
+            type: "object",
+            properties: {
+              nodeName: { type: "string", description: "Nodo en el que se programa el Pod." },
+            },
+          },
+          status: { type: "object" },
+        },
+      });
     case "resources_reset":
       for (const stop of subscriptions.values()) stop();
       subscriptions.clear();

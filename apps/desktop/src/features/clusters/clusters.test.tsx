@@ -58,7 +58,7 @@ describe("clústeres", () => {
     const error = {
       code: "Unauthorized" as const,
       message: "No se encontró el exec plugin «aws»",
-      details: { status: null, hint: "Añade su carpeta en Ajustes" },
+      details: { status: null, hint: "Añade su carpeta en Ajustes", causes: [] },
     };
     const { calls } = mockBackend({
       sources: [source],

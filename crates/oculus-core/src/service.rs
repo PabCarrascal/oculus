@@ -8,8 +8,8 @@ use std::sync::Arc;
 use kube::config::KubeConfigOptions;
 use kube::{Client, Config};
 use oculus_protocol::{
-    ClusterPrefs, ClusterSummary, ErrorCode, KindRef, KubeconfigSource, OculusError, ResourceKind, Scope,
-    SourceOrigin,
+    ClusterPrefs, ClusterSummary, ErrorCode, KindRef, KubeconfigSource, ObjectRef, OculusError,
+    ResourceDetail, ResourceKind, Scope, SourceOrigin, UpdateResult,
 };
 use oculus_watch::{Subscriber, SubscriptionId};
 use tokio::sync::OnceCell;
@@ -185,6 +185,43 @@ impl ClusterService {
         subscriber: Subscriber,
     ) -> Result<SubscriptionId, OculusError> {
         self.manager.require_session(id)?.subscribe(kind, scope, linger, subscriber)
+    }
+
+    pub async fn detail(&self, id: &str, r: &ObjectRef) -> Result<ResourceDetail, OculusError> {
+        let read_only = self.workspace.prefs(id).read_only;
+        self.manager.require_session(id)?.detail(r, read_only).await
+    }
+
+    pub async fn update(
+        &self,
+        id: &str,
+        r: &ObjectRef,
+        base_json: &str,
+        edited_json: &str,
+        dry_run: bool,
+        force: bool,
+    ) -> Result<UpdateResult, OculusError> {
+        // El modo solo lectura se comprueba aquí también: la UI puede estar desfasada.
+        if self.workspace.prefs(id).read_only {
+            return Err(OculusError::invalid("El clúster está en modo solo lectura")
+                .with_hint("Puedes cambiarlo en las preferencias del clúster."));
+        }
+        self.manager.require_session(id)?.update(r, base_json, edited_json, dry_run, force).await
+    }
+
+    pub async fn reveal_secret(&self, id: &str, r: &ObjectRef, key: &str) -> Result<String, OculusError> {
+        self.manager.require_session(id)?.reveal_secret(r, key).await
+    }
+
+    pub async fn schema(
+        &self,
+        id: &str,
+        group: &str,
+        version: &str,
+        kind: &str,
+    ) -> Result<Option<String>, OculusError> {
+        let session = self.manager.require_session(id)?;
+        crate::resources::schema_for(&session, group, version, kind).await
     }
 
     /// Si el clúster ya se desconectó no hay nada que dar de baja.

@@ -153,6 +153,16 @@ type ResourceEvent =
 
 Si dos vistas piden lo mismo, comparten watcher en el backend: cada una recibe su propio snapshot inicial y, a partir de ahí, los mismos deltas.
 
+> **Implementado en la etapa 3** (`commands/detail.rs`), con estos cambios respecto a lo de abajo:
+> - **`resource_get(clusterId, target)`** devuelve el objeto como **JSON** (`objectJson`, sin `managedFields`); el YAML lo genera la UI con la librería `yaml`, que también sirve para llevar un error a su línea. Incluye `editable` (verbo update, clúster no en solo lectura, no es un Secret) en lugar de `allowedActions`; el filtrado por RBAC es de la etapa 4.
+> - **`resource_update(clusterId, target, baseJson, editedJson, dryRun, force)`** en lugar de `resource_apply`. El backend calcula un **JSON Patch** entre el objeto tal como se cargó y el editado, con una operación `test` antes de cada campo que se sustituye o se quita. Si otro cambió esos mismos campos, el parche entero se rechaza y la UI ofrece ver diferencias, recargar o sobrescribir (`force`: el mismo diff sin los `test`, que pisa solo lo que el usuario tocó). Se descartaron:
+>   - *PUT con `resourceVersion`*: el controlador de un Deployment reescribe el estado varias veces por segundo durante un despliegue y cada escritura cambia la versión, así que editar daba conflicto aunque nadie hubiera tocado la `spec` (comprobado contra kind).
+>   - *Server-side apply*: deja intactos los campos de otros gestores y da conflictos de propiedad con todo lo creado por `kubectl` o por los controladores.
+>   - Aplicar YAML nuevo (crear objetos) con server-side apply queda para la etapa 4.
+> - Validación estricta (`fieldValidation=Strict`): un campo desconocido es un error. Con PATCH llega como 422 con el objeto entero en el mensaje; el backend extrae la ruta (`spec.replicass`) a `details.causes` y descarta el volcado.
+> - **`secret_reveal(clusterId, target, key)`**: un valor cada vez. Los Secrets todavía no se pueden editar desde Oculus (su YAML es de solo lectura, con los valores vacíos).
+> - **`openapi_schema(clusterId, group, version, kind)`**: esquema JSON del tipo (de `/openapi/v3`, cacheado por grupo/versión en la sesión) para validar mientras se escribe. El documento tiene el esquema del tipo en la raíz y todos los del grupo en `components.schemas`, para que resuelvan sus `$ref`; una raíz con solo `$ref` no la resuelve `monaco-yaml`.
+
 ## Detalle y modificación
 
 ```ts

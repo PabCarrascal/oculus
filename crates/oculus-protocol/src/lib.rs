@@ -3,6 +3,7 @@
 
 mod app;
 mod cluster;
+mod detail;
 mod error;
 mod resources;
 mod settings;
@@ -12,7 +13,8 @@ pub use cluster::{
     Category, ClusterId, ClusterPrefs, ClusterStatus, ClusterSummary, ConnectStep, KubeconfigSource,
     ResourceKind, SourceOrigin,
 };
-pub use error::{ErrorCode, ErrorDetails, OculusError};
+pub use detail::{EventInfo, ObjectRef, RelatedRef, Relation, ResourceDetail, UpdateResult};
+pub use error::{ErrorCode, ErrorDetails, FieldCause, OculusError};
 pub use resources::{
     CellValue, ColumnDef, ColumnType, KindRef, ResourceEvent, Row, RowStatus, Scope, Tone, WatchState,
 };

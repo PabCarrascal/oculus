@@ -172,7 +172,7 @@ describe("explorador", () => {
         error: {
           code: "Forbidden",
           message: "pods is forbidden",
-          details: { status: 403, hint: "Elige namespaces concretos en el filtro." },
+          details: { status: 403, hint: "Elige namespaces concretos en el filtro.", causes: [] },
         },
       }),
     );

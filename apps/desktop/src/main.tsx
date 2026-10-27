@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { queryClient } from "./lib/queryClient";
+import { reportErrors } from "./lib/reportErrors";
 import { applyTheme } from "./lib/theme";
 import { router } from "./router";
 import "./styles.css";
@@ -20,6 +21,8 @@ if (
 
 // Ajustes antes de pintar: así el primer frame ya sale con el tema y el idioma
 // correctos, sin destellos ni textos que cambian.
+if ("__TAURI_INTERNALS__" in window) reportErrors();
+
 // Una recarga del webview no avisa al backend: se cierran las suscripciones de la carga anterior.
 await commands.resourcesReset();
 const settings = await commands.settingsGet();

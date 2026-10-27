@@ -159,6 +159,8 @@ Cada decisión indica qué se eligió, por qué, y qué alternativa se descartó
 - El editor (Monaco) **se carga solo al abrir la pestaña YAML**: pesa varios MB y no debe afectar al arranque.
 - **Descartada:** CodeMirror 6 (mucho más ligero y una opción razonable, pero su validación por JSON Schema para YAML está menos madura que la de `monaco-yaml`). Si Monaco da problemas en WebKitGTK, es el plan B.
 
+> **Etapa 3:** la validación con autoridad no es server-side apply sino un *dry-run* del mismo JSON Patch que se aplicará (ver 03). Monaco se carga en un bloque aparte al abrir la pestaña YAML (unos 3,5 MB que no tocan el arranque). Se queda en **Monaco 0.52.x**: desde 0.53 `createWebWorker` cambió de firma y `monaco-yaml` 5.5 (vía `monaco-worker-manager` 2.0.1) no arranca su validador. Los workers van dentro del bundle (`?worker&inline`) y se crean desde `blob:`, porque WKWebView no los crea desde `tauri://`. La CSP permite `worker-src blob:` y `style-src 'unsafe-inline'`; para lo segundo hace falta `dangerousDisableAssetCspModification: ["style-src"]`, porque si Tauri añade hashes a `style-src` el navegador ignora `'unsafe-inline'` y Monaco pierde sus estilos.
+
 ### D7 · Logs: lista virtualizada en vez de xterm.js
 
 - **Desviación del enunciado:** el prompt proponía xterm.js también para logs. Lo cambio porque un terminal no está pensado para buscar, filtrar por texto o nivel, ajustar líneas largas, mezclar contenedores con colores o copiar un rango. Una lista virtualizada (TanStack Virtual) con búffer circular de 50.000 líneas hace todo eso.
