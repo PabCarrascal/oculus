@@ -63,6 +63,9 @@ struct StreamState {
 }
 
 struct State {
+    /// "group/version/plural" para los logs.
+    label: String,
+    opened_at: std::time::Instant,
     columns: Vec<ColumnDef>,
     /// uid → (stream, fila)
     rows: HashMap<String, (usize, Row)>,
@@ -121,6 +124,7 @@ impl WatchManager {
                     s
                 }
             };
+            tracing::debug!(subscription = %id, kind = ?key.kind, scope = ?key.scope, "alta");
             inner.subs.insert(id.clone(), key);
             (id, shared)
         };
@@ -189,6 +193,8 @@ impl WatchManager {
         let shared = Arc::new(Shared {
             key: key.clone(),
             state: Mutex::new(State {
+                label: format!("{}/{}/{}", key.kind.group, key.kind.version, key.kind.plural),
+                opened_at: std::time::Instant::now(),
                 columns: Vec::new(),
                 rows: HashMap::new(),
                 streams: Vec::new(),
@@ -236,6 +242,7 @@ impl WatchManager {
                             let state = if fatal { WatchState::Error } else { WatchState::Backoff };
                             set_status(&mut st, state, Some(error));
                             if fatal {
+                                tracing::warn!(kind = %st.label, "watch detenido por un error definitivo");
                                 self.release_if_unused(shared, &mut st);
                                 return;
                             }
@@ -407,6 +414,12 @@ fn apply(st: &mut State, stream: usize, event: Event<DynamicObject>, projector: 
             if st.streams.iter().all(|s| s.listed && s.buffer.is_none()) {
                 if !st.initialized {
                     st.initialized = true;
+                    tracing::info!(
+                        kind = %st.label,
+                        rows = st.rows.len(),
+                        ms = st.opened_at.elapsed().as_millis() as u64,
+                        "primer snapshot"
+                    );
                     st.pending_up.clear();
                     st.pending_del.clear();
                     let snap = snapshot(st);
